@@ -66,18 +66,16 @@ export function Hero() {
             <span className="h-1.5 w-1.5 rounded-full bg-accent" /> Humans and AI executives in one room
           </p>
           <h1 className="max-w-[680px] text-5xl font-semibold leading-none tracking-[-0.04em] text-balance md:text-7xl">
-            Hear every <span className="text-accent">no</span>
-            <br />
-            before the real call.
+            Your team vs. the <span className="text-accent">committee</span>.
           </h1>
           <p className="mt-6 max-w-[520px] text-lg text-muted text-pretty">
-            Paste a prospect’s website and one line about what you sell. Three executives built from real research on that company hear your
-            pitch out loud, check your numbers, message each other in private, and vote.
+            Paste a prospect’s website. Three AI executives, built from live research on that company, sit in one room with you and your
+            teammate. They check your numbers, whisper, pick sides, trade, turn on you, and act on their own when you go quiet. Then they vote.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-6">
             <Cta />
-            <Link href="/history" className="text-sm font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink">
-              See past sessions
+            <Link href="/deals" className="text-sm font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink">
+              See the pipeline
             </Link>
           </div>
           <ul className="mt-10 flex flex-wrap gap-2 text-sm text-muted">

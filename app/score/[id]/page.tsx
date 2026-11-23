@@ -122,6 +122,68 @@ export default function ScorePage() {
           })}
         </section>
 
+        {(s.players?.length ?? 0) > 0 && (
+          <section className="card mt-6 p-6">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-semibold">The selling team</h2>
+              {s.worldEvents?.[0] && (
+                <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+                  World event turn {s.worldEvents[0].turn}: {s.worldEvents[0].kind.replace(/_/g, " ")} (caused by {s.personas.find((p) => p.id === s.worldEvents![0].by)?.name})
+                </span>
+              )}
+            </div>
+            {(() => {
+              const impact = (name: string) => s.personas.reduce((a, p) => a + (s.playerScores?.[p.id]?.[name] ?? 0), 0);
+              const mvp = [...(s.players ?? [])].sort((a, b) => impact(b.name) - impact(a.name))[0]?.name;
+              const log = s.log ?? [];
+              return (
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  {(s.players ?? []).map((pl) => {
+                    const lines = s.transcript.filter((t) => t.speaker === pl.name).length;
+                    const backers = s.personas.filter((p) => s.alliances?.[p.id] === pl.name);
+                    const betrayed = log.filter((e) => e.action.includes(`betrays ${pl.name}`) || e.action.includes(`drops ${pl.name}`));
+                    const trades = log.filter((e) => e.action === "offers a trade" && (e.detail ?? "").toLowerCase().includes(pl.name.toLowerCase()));
+                    const score = impact(pl.name);
+                    return (
+                      <div key={pl.name} className="rounded-2xl border border-line bg-white p-4">
+                        <div className="flex items-center gap-3">
+                          <span className="grid h-9 w-9 place-items-center rounded-full text-sm font-semibold text-white" style={{ background: pl.color }}>
+                            {initials(pl.name)}
+                          </span>
+                          <div className="flex-1">
+                            <p className="font-semibold">
+                              {pl.name} {pl.name === mvp && (s.players?.length ?? 0) > 1 && <span className="ml-1 rounded-full bg-ink px-2 py-0.5 text-[10px] font-bold text-white">MVP</span>}
+                            </p>
+                            <p className="text-xs text-muted">{lines} line{lines === 1 ? "" : "s"} spoken</p>
+                          </div>
+                          <span className={`text-lg font-semibold tabular-nums ${score >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                            {score >= 0 ? "+" : ""}
+                            {score}
+                          </span>
+                        </div>
+                        <p className="mt-3 text-sm">
+                          <span className="text-muted">Backed by: </span>
+                          {backers.length ? backers.map((b) => b.name).join(", ") : "nobody"}
+                        </p>
+                        {betrayed.length > 0 && (
+                          <p className="mt-1 text-sm text-red-600">
+                            Betrayed by {betrayed.map((e) => s.personas.find((p) => p.id === e.actor)?.name ?? e.actor).join(", ")}
+                          </p>
+                        )}
+                        {trades.map((t, i) => (
+                          <p key={i} className="mt-1 text-sm text-ink/80">
+                            Trade offered by {s.personas.find((p) => p.id === t.actor)?.name}: “{t.detail}”
+                          </p>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </section>
+        )}
+
         <section className="mt-6 grid gap-5 md:grid-cols-2">
           <div className="card p-6">
             <h2 className="font-semibold">Claims the analyst checked</h2>
