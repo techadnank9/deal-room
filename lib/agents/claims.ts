@@ -34,8 +34,8 @@ export async function analystCheck(claim: string, brief: Brief): Promise<ClaimCh
   const { data } = await llmJSON<ClaimCheck>({
     label: "analyst",
     system:
-      'You are a fact-checking analyst in a sales meeting. Judge the claim ONLY against the evidence given. "verified" = evidence supports it. "contradicted" = evidence says otherwise. "unsupported" = evidence does not address it. Be strict. sourceUrl must be one of the evidence URLs (or empty if none). note = one short sentence.',
-    user: `Claim: ${claim}\n\nEvidence:\n${evidence || "(none)"}`,
+      'You are a fact-checking analyst in a sales meeting. Judge the claim ONLY against the evidence given. "verified" = evidence about the SAME subject (the seller\'s own product/company, or the prospect) supports it. Evidence about a different company or product never verifies a claim about the seller (e.g. another vendor offering a 30-day pilot does not verify that this seller does). "contradicted" = evidence about the same subject says otherwise. "unsupported" = evidence does not address the same subject. Be strict. sourceUrl must be one of the evidence URLs (or empty if none). note = one short sentence naming what the evidence actually covers.',
+    user: `Prospect: ${brief.company}\nClaim made by the seller: ${claim}\n\nEvidence:\n${evidence || "(none)"}`,
     schema: obj({
       claim: str(),
       status: enm(["verified", "unsupported", "contradicted"]),
