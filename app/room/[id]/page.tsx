@@ -40,6 +40,8 @@ export default function RoomPage() {
   const [muted, setMuted] = useState(false);
   const [logOpen, setLogOpen] = useState(true);
   const [model, setModel] = useState("");
+  const [tactic, setTactic] = useState<{ tactic: string; performance: string; reason: string } | null>(null);
+  const [tacticKey, setTacticKey] = useState(0);
   const mutedRef = useRef(false);
   const logKey = useRef(0);
   const turnRef = useRef(0);
@@ -156,6 +158,20 @@ export default function RoomPage() {
       }
       for (const w of r.whisperPairs) entries.push({ turn: r.turn, actor: w.from, action: `whispers to ${w.to}`, detail: "hidden", hidden: true });
       entries.push({ turn: r.turn, actor: "director", action: `floor to ${r.speaker} (urge ${r.thoughts[r.speaker].urge}/10)` });
+      if (r.adaptation) {
+        setTactic(r.adaptation);
+        if (r.adaptation.changed) {
+          setTacticKey((k) => k + 1);
+          entries.push({
+            turn: r.turn,
+            actor: "director",
+            action: `committee adapts: ${r.adaptation.tactic.toUpperCase()}`,
+            tone: r.adaptation.tactic === "close" ? "good" : r.adaptation.tactic === "pressure" ? "bad" : "neutral",
+            detail: `You are ${r.adaptation.performance}. Briefed all three executives over BAND.`,
+            reason: r.adaptation.reason,
+          });
+        }
+      }
       push(entries);
       setText("");
       setBusy(false);
@@ -233,7 +249,21 @@ export default function RoomPage() {
 
       {/* room read */}
       <div className="card absolute left-5 top-24 w-72 p-4">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">The room</p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">The room</p>
+          {tactic && (
+            <span
+              key={tacticKey}
+              title={tactic.reason}
+              className={`rise rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                tactic.tactic === "pressure" ? "bg-red-100 text-red-700" : tactic.tactic === "close" ? "bg-emerald-100 text-emerald-700" : "bg-black/[0.06] text-ink"
+              }`}
+            >
+              {tactic.tactic === "pressure" ? "Pressing you" : tactic.tactic === "close" ? "Ready to close" : "Probing"}
+            </span>
+          )}
+        </div>
+        {tactic && <p className="mt-1 text-[11px] leading-snug text-muted">You are {tactic.performance}: {tactic.reason}</p>}
         <div className="mt-3 space-y-3">
           {s.personas.map((p) => {
             const c = convictions[p.id] ?? p.conviction;

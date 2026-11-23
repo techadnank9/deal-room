@@ -76,6 +76,8 @@ export type SessionState = {
   portraits?: Partial<Record<ExecId, string>>;
   imagesPending?: boolean;
   model?: string;
+  tactic?: "probe" | "pressure" | "close";
+  tacticHistory?: { turn: number; tactic: string; performance: string; reason: string }[];
   createdAt: string;
 };
 
@@ -88,6 +90,7 @@ export type TurnResponse = {
   thoughts: Record<ExecId, { privateThought: string; reason: string; delta: number; urge: number }>;
   factChecks: ClaimCheck[];
   whisperPairs: { from: ExecId; to: string }[];
+  adaptation: { tactic: string; performance: string; reason: string; changed: boolean };
   done: boolean;
 };
 

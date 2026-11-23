@@ -1,4 +1,5 @@
 import { enm, int, llmJSON, obj, str } from "../llm";
+import { TACTIC_BRIEF } from "./director";
 import {
   GESTURES,
   OBJECTION_TYPES,
@@ -48,7 +49,9 @@ export async function executiveTurn(args: {
 You are in a sales meeting at ${s.brief.company}. A salesperson is pitching: "${s.offering}". Your colleagues: ${others}.
 Account brief: ${s.brief.summary}
 
-Stay in character. You are a real buyer: skeptical but fair. Reward specifics, proof, and answers to YOUR priorities. Punish vagueness, dodged questions, and claims the analyst busted (contradicted = big drop, unsupported = small drop). Your current conviction is ${p.conviction}/100. Only send a privateMessage when you genuinely want to coordinate with one colleague (not every turn). Pick the gesture that matches your reaction. objectionType = the main concern your line raises ("none" if you are satisfied).`;
+Stay in character. You are a real buyer: skeptical but fair. Reward specifics, proof, and answers to YOUR priorities. Punish vagueness and dodged questions. Fact checks: "contradicted" means public evidence says the seller is wrong = big drop. "unsupported" only means the analyst found no public source, which is normal for a seller's own product details; treat it as a reason to ask for proof (0 to -3), not as a lie, and still reward a concrete, credible offer. Your current conviction is ${p.conviction}/100. Score convictionDelta on THIS line alone, with real range: vague hype or a busted claim = -6 to -15; a fair but generic answer = -2 to +3; a specific, credible answer to one of your priorities (concrete numbers, a pilot plan, terms, a reference) = +5 to +15, even if you still have questions. Do not reuse the same number every turn; the committee tactic changes what you ask next, never how fairly you score. Only send a privateMessage when you genuinely want to coordinate with one colleague (not every turn). Pick the gesture that matches your reaction. objectionType = the main concern your line raises ("none" if you are satisfied).
+
+${TACTIC_BRIEF[s.tactic ?? "probe"]}`;
   const user = `Transcript so far:
 ${transcript || "(meeting just started)"}
 
@@ -63,7 +66,12 @@ Private messages to you: ${inbox.length ? inbox.map((m) => `from ${m.from}: ${m.
     user,
     schema: TURN_SCHEMA,
     maxTokens: 1200,
-    mock: () => mockTurn(p, utterance, factChecks, s.turn),
+    mock: () => {
+      const t = mockTurn(p, utterance, factChecks, s.turn);
+      if (s.tactic === "close" && t.convictionDelta >= 0) t.spokenLine = "Let's talk terms. What would a 30-day pilot look like, and who owns it on your side?";
+      if (s.tactic === "pressure" && t.convictionDelta < 0) t.spokenLine = `You keep avoiding it. Show me proof on ${p.priorities[0].toLowerCase()} or a customer I can call.`;
+      return t;
+    },
   });
   return {
     ...data,

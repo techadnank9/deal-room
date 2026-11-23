@@ -2,6 +2,7 @@ import { withModel } from "@/lib/llm";
 import { loadSession, saveSession, writeEvents, type EventRow } from "@/lib/db";
 import { analystCheck, extractClaims } from "@/lib/agents/claims";
 import { executiveTurn, pickSpeaker } from "@/lib/agents/executive";
+import { assessPerformance } from "@/lib/agents/director";
 import { inbox, sendMessage } from "@/lib/sponsors/band";
 import { EXEC_IDS, MAX_TURNS, type ExecId, type ExecTurn, type TurnResponse } from "@/lib/types";
 
@@ -90,6 +91,28 @@ async function handle(body: { id: string; text: string }) {
     text: `${speaker} speaks (urge ${turns[speaker].urgeToSpeak})`, target: speaker,
   });
 
+  // Director: read how the human is doing and adapt the committee's tactic for the next turn.
+  const assess = assessPerformance(
+    s,
+    s.personas.map((p) => turns[p.id].convictionDelta),
+    factChecks,
+  );
+  const changed = assess.tactic !== (s.tactic ?? "probe");
+  s.tactic = assess.tactic;
+  (s.tacticHistory ??= []).push({ turn, tactic: assess.tactic, performance: assess.performance, reason: assess.reason });
+  events.push({
+    session_id: id, turn, actor: "director", event_type: "adapt",
+    text: assess.reason, status: assess.tactic, target: assess.performance,
+  });
+  if (changed) {
+    // Coordinate the committee about the human: the director briefs each executive over BAND.
+    await Promise.all(
+      s.personas.map((p) =>
+        sendMessage(room, { from: "director", to: p.id, text: `Switch to ${assess.tactic}: seller is ${assess.performance} (${assess.reason}).`, kind: "whisper" }),
+      ),
+    );
+  }
+
   s.turn = turn;
   await saveSession(s);
   await writeEvents(events);
@@ -103,6 +126,7 @@ async function handle(body: { id: string; text: string }) {
     thoughts,
     factChecks,
     whisperPairs,
+    adaptation: { tactic: assess.tactic, performance: assess.performance, reason: assess.reason, changed },
     done: turn >= MAX_TURNS,
   };
   return Response.json(res);
