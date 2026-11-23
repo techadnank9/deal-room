@@ -120,6 +120,15 @@ export async function readEvents(sessionId: string) {
 
 export async function saveSession(s: SessionState) {
   const d = await db();
+  // Background image generation writes art fields; never let a concurrent save drop them.
+  if (!s.backdropUrl || !s.portraits || s.imagesPending) {
+    const prev = await loadSession(s.id);
+    if (prev) {
+      s.backdropUrl ??= prev.backdropUrl;
+      s.portraits ??= prev.portraits;
+      if (prev.imagesPending === false) s.imagesPending = false;
+    }
+  }
   const now = new Date().toISOString();
   if (d.kind === "pg") {
     await d.exec(

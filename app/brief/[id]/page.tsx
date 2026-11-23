@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { api, EXEC_COLOR } from "@/lib/ui";
+import { api, EXEC_COLOR, initials } from "@/lib/ui";
 import type { SessionState } from "@/lib/types";
 
 export default function BriefPage() {
@@ -12,9 +12,18 @@ export default function BriefPage() {
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    api<{ session: SessionState }>(`/api/session?id=${id}`)
-      .then((r) => setS(r.session))
-      .catch((e) => setErr(String(e)));
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const load = () =>
+      api<{ session: SessionState }>(`/api/session?id=${id}`)
+        .then((r) => {
+          setS(r.session);
+          // Portraits are generated in the background; refresh until they land.
+          if (r.session.imagesPending && tries++ < 12) timer = setTimeout(load, 3000);
+        })
+        .catch((e) => setErr(String(e)));
+    load();
+    return () => clearTimeout(timer);
   }, [id]);
 
   if (err) return <p className="p-10 text-red-600">{err}</p>;
@@ -51,11 +60,20 @@ export default function BriefPage() {
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         {s.personas.map((p) => (
           <div key={p.id} className="card p-5">
-            <div className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full" style={{ background: EXEC_COLOR[p.id] }} />
-              <span className="font-semibold">{p.name}</span>
+            <div className="relative -mx-5 -mt-5 mb-4 aspect-[4/3] overflow-hidden rounded-t-[20px]" style={{ background: `${EXEC_COLOR[p.id]}14` }}>
+              {s.portraits?.[p.id] ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={`/api/image?url=${encodeURIComponent(s.portraits[p.id]!)}`} alt={p.name} className="h-full w-full object-cover" />
+              ) : (
+                <div className="grid h-full place-items-center">
+                  <span className="grid h-20 w-20 place-items-center rounded-full text-2xl font-semibold text-white" style={{ background: EXEC_COLOR[p.id] }}>
+                    {initials(p.name)}
+                  </span>
+                </div>
+              )}
+              <span className="absolute bottom-3 left-3 rounded-full bg-white/90 px-3 py-1 text-sm font-medium shadow-sm">{p.name}</span>
             </div>
-            <p className="text-sm text-muted">{p.title}</p>
+            <p className="text-sm font-semibold">{p.title}</p>
             <p className="mt-3 text-sm italic text-muted">{p.personality}</p>
             <p className="mt-4 text-xs uppercase tracking-wider text-muted">Priorities</p>
             <ul className="mt-1 space-y-1 text-sm">

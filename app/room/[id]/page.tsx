@@ -192,6 +192,7 @@ export default function RoomPage() {
           votes={votes}
           check={lastCheck}
           analystBusy={busy && userTalking}
+          backdropUrl={s.backdropUrl ? `/api/image?url=${encodeURIComponent(s.backdropUrl)}` : null}
         />
       </div>
 

@@ -4,6 +4,7 @@ import { buildBriefAndPersonas } from "@/lib/agents/personas";
 import { domainOf, researchAccount } from "@/lib/sponsors/telem";
 import { enrichCompany } from "@/lib/sponsors/glasser";
 import { openRoom } from "@/lib/sponsors/band";
+import { backdropPrompt, generateImage, runwareEnabled } from "@/lib/sponsors/runware";
 import type { SessionState } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -68,8 +69,10 @@ export async function POST(req: Request) {
     bandRoomId: band.roomId,
     bandProvider: band.provider,
     createdAt: new Date().toISOString(),
+    imagesPending: runwareEnabled(),
   };
   await saveSession(session);
+  if (runwareEnabled()) void generateArt(session);
   await writeEvents([
     {
       session_id: id,
@@ -90,6 +93,22 @@ export async function POST(req: Request) {
     })),
   ]);
   return Response.json({ id, session });
+}
+
+/** Runware: window backdrop + one portrait per executive, generated in the background. */
+async function generateArt(s: SessionState) {
+  const portraitPrompt = (p: SessionState["personas"][number]) =>
+    `Professional corporate headshot photo of ${p.name}, ${p.title}, ${p.personality} Neutral warm studio background, natural light, 85mm, realistic skin, business attire.`;
+  const [backdrop, ...faces] = await Promise.all([
+    generateImage(backdropPrompt(s.brief.company), 1024, 512),
+    ...s.personas.map((p) => generateImage(portraitPrompt(p), 512, 640)),
+  ]);
+  const fresh = await loadSession(s.id);
+  if (!fresh) return;
+  fresh.backdropUrl = backdrop;
+  fresh.portraits = Object.fromEntries(s.personas.map((p, i) => [p.id, faces[i] ?? undefined]).filter(([, u]) => u));
+  fresh.imagesPending = false;
+  await saveSession(fresh);
 }
 
 export async function GET(req: Request) {

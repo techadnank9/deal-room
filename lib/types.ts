@@ -72,6 +72,9 @@ export type SessionState = {
   fixes?: string[];
   bandRoomId?: string;
   bandProvider?: string;
+  backdropUrl?: string | null;
+  portraits?: Partial<Record<ExecId, string>>;
+  imagesPending?: boolean;
   createdAt: string;
 };
 
