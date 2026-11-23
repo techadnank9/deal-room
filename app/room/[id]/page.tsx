@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import DecisionLog, { type LogEntry } from "@/components/room/DecisionLog";
+
+const Scene = dynamic(() => import("@/components/room/Scene"), {
+  ssr: false,
+  loading: () => <div className="flex h-full items-center justify-center text-zinc-500">Building the room…</div>,
+});
 import { api, EXEC_COLOR, EXEC_LABEL } from "@/lib/ui";
 import {
   MAX_TURNS,
@@ -31,7 +37,18 @@ export default function RoomPage() {
   const [busy, setBusy] = useState(false);
   const [votes, setVotes] = useState<Vote[] | null>(null);
   const [err, setErr] = useState("");
+  const [gestureUntil, setGestureUntil] = useState(0);
+  const [whispers, setWhispers] = useState<{ from: string; to: string }[]>([]);
+  const [userTalking, setUserTalking] = useState(false);
   const logKey = useRef(0);
+  const turnRef = useRef(0);
+  const linesEnd = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    turnRef.current = turn;
+  }, [turn]);
+  useEffect(() => {
+    void linesEnd.current?.scrollIntoView({ behavior: "smooth" });
+  }, [lines.length]);
 
   const push = useCallback((entries: Omit<LogEntry, "key">[]) => {
     setLog((l) => [...l, ...entries.map((e) => ({ ...e, key: String(logKey.current++) }))]);
@@ -67,14 +84,14 @@ export default function RoomPage() {
       setVotes(r.votes);
       push(
         r.votes.map((v) => ({
-          turn: MAX_TURNS,
+          turn: turnRef.current,
           actor: v.id,
           action: v.vote === "buy" ? "votes BUY" : "votes PASS",
           tone: v.vote === "buy" ? "good" : "bad",
           reason: `${v.reason} (decided on turn ${v.decisiveTurn})`,
         })),
       );
-      setTimeout(() => router.push(`/score/${id}`), 3500);
+      setTimeout(() => router.push(`/score/${id}`), 7000);
     } catch (e) {
       setErr(String(e));
       setBusy(false);
@@ -86,13 +103,20 @@ export default function RoomPage() {
     setBusy(true);
     setErr("");
     setSpeaker(null);
+    setUserTalking(true);
     setLines((l) => [...l, { speaker: "user", text: utterance }]);
     try {
       const r = await api<TurnResponse>("/api/turn", { id, text: utterance });
       setTurn(r.turn);
       setConvictions(r.convictions);
       setGestures(r.gestures);
+      setGestureUntil(performance.now() + 2800);
+      setUserTalking(false);
       setSpeaker(r.speaker);
+      if (r.whisperPairs.length) {
+        setWhispers(r.whisperPairs);
+        setTimeout(() => setWhispers([]), 3800);
+      }
       setLines((l) => [...l, { speaker: r.speaker, text: r.spokenLine }]);
       if (r.factChecks.length) setLastCheck(r.factChecks[r.factChecks.length - 1]);
       const entries: Omit<LogEntry, "key">[] = [{ turn: r.turn, actor: "user", action: "pitches", detail: utterance }];
@@ -131,6 +155,7 @@ export default function RoomPage() {
       if (r.done) await verdict();
     } catch (e) {
       setErr(String(e));
+      setUserTalking(false);
       setBusy(false);
     }
   }
@@ -157,44 +182,36 @@ export default function RoomPage() {
           </button>
         </header>
 
-        {/* Stage: executives + wall screen (3D scene replaces this in milestone 2) */}
-        <div className="grid grid-cols-3 gap-4 border-b border-zinc-800 p-6">
-          {s.personas.map((p) => {
-            const c = convictions[p.id] ?? p.conviction;
-            const vote = votes?.find((v) => v.id === p.id);
-            return (
-              <div
-                key={p.id}
-                className={`rounded-xl border p-4 transition ${speaker === p.id ? "border-amber-400 bg-amber-400/5" : "border-zinc-800 bg-zinc-900/50"}`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold" style={{ color: EXEC_COLOR[p.id] }}>
-                    {p.name}
-                  </span>
-                  <span className="text-xs text-zinc-500">{EXEC_LABEL[p.id]}</span>
-                </div>
-                <div className="mt-3 h-2 w-full overflow-hidden rounded bg-zinc-800">
-                  <div className="h-full transition-all duration-700" style={{ width: `${c}%`, background: EXEC_COLOR[p.id] }} />
-                </div>
-                <div className="mt-2 flex justify-between text-xs text-zinc-400">
-                  <span>conviction {c}</span>
-                  <span>{vote ? (vote.vote === "buy" ? "✅ BUY" : "❌ PASS") : gestures[p.id] ?? "listening"}</span>
-                </div>
-              </div>
-            );
-          })}
-          {lastCheck && (
-            <div className="col-span-3 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm">
-              <span className={lastCheck.status === "verified" ? "text-emerald-400" : "text-red-400"}>
-                {lastCheck.status.toUpperCase()}
-              </span>{" "}
-              <span className="text-zinc-300">{lastCheck.claim}</span>
-              <span className="ml-2 text-xs text-zinc-500">{lastCheck.note}</span>
+        <div className="relative h-[58vh] min-h-[360px] border-b border-zinc-800">
+          <Scene
+            execs={s.personas.map((p) => ({
+              id: p.id,
+              name: p.name,
+              role: EXEC_LABEL[p.id],
+              color: EXEC_COLOR[p.id],
+              conviction: convictions[p.id] ?? p.conviction,
+            }))}
+            gestures={gestures}
+            gestureUntil={gestureUntil}
+            speaker={speaker}
+            userTalking={userTalking}
+            whispers={whispers}
+            votes={votes}
+            check={lastCheck}
+            analystBusy={busy && userTalking}
+          />
+          {votes && (
+            <div className="pointer-events-none absolute inset-x-0 top-4 text-center text-2xl font-semibold">
+              {votes.filter((v) => v.vote === "buy").length >= 2 ? (
+                <span className="text-emerald-400">Deal won — buyers coming over to shake hands</span>
+              ) : (
+                <span className="text-red-400">Deal lost — the committee is walking out</span>
+              )}
             </div>
           )}
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
           {lines.length === 0 && (
             <p className="text-zinc-500">The committee is seated. Open with your pitch — be specific, they will check your numbers.</p>
           )}
@@ -214,6 +231,7 @@ export default function RoomPage() {
             );
           })}
           {busy && <p className="text-sm text-zinc-500">The committee is thinking…</p>}
+          <div ref={linesEnd} />
         </div>
 
         <form

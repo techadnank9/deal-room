@@ -104,12 +104,24 @@ function mockTurn(p: Persona, utterance: string, checks: ClaimCheck[], turn: num
   delta = clamp(delta, -20, 20);
   const objection = p.objections[turn % p.objections.length]?.text ?? "Tell me more.";
   const gesture: Gesture = delta >= 6 ? (Math.random() < 0.5 ? "nod" : "leanIn") : delta <= -6 ? (Math.random() < 0.5 ? "headShake" : "armsCrossed") : "idle";
+  const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
+  const prio = p.priorities[turn % p.priorities.length].toLowerCase();
   const spokenLine =
     delta >= 6
-      ? `That's closer to what I need. ${hit ? "Can you put that in writing?" : "Keep going."}`
+      ? pick([
+          `Okay, that helps on ${prio}. What would the first ninety days look like?`,
+          `That's closer to what I need. Can you put that number in writing?`,
+          `Fine. If that holds up, ${prio} stops being my blocker.`,
+          `I like that. Who else our size is doing this today?`,
+        ])
       : busted
-        ? "Our analyst says that number doesn't hold up. Why should I trust the rest?"
-        : objection;
+        ? pick([
+            "Our analyst says that number doesn't hold up. Why should I trust the rest?",
+            "That claim just got contradicted on the screen. Want to try again?",
+          ])
+        : unsupported && Math.random() < 0.5
+          ? pick(["Where does that number come from?", "I can't find a source for that. Do you have one?"])
+          : pick([objection, `You still haven't told me anything about ${prio}.`, `Let me be direct: ${objection}`]);
   const whisperTo = (["cfo", "tech", "procurement"] as ExecId[]).filter((x) => x !== p.id)[Math.floor(Math.random() * 2)];
   return {
     privateThought: hit
