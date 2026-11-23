@@ -33,7 +33,7 @@ export function Nav() {
           <span className="h-2.5 w-2.5 rounded-full bg-accent" /> Deal Room
         </Link>
         <div className="flex items-center gap-1 text-sm">
-          <a href="#how" className="hidden rounded-full px-3 py-2 text-muted transition-colors duration-300 hover:text-ink md:inline">
+          <a href="/how-it-works" className="hidden rounded-full px-3 py-2 text-muted transition-colors duration-300 hover:text-ink md:inline">
             How it works
           </a>
           <a href="#scorecard" className="hidden rounded-full px-3 py-2 text-muted transition-colors duration-300 hover:text-ink md:inline">
