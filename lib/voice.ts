@@ -28,7 +28,41 @@ function voiceFor(agent: string): SpeechSynthesisVoice | undefined {
   return voices[Math.max(0, order.indexOf(agent)) % voices.length];
 }
 
+let currentAudio: HTMLAudioElement | null = null;
+let ttsAvailable: boolean | null = null; // null = unknown, try once
+
+/** Speak with ElevenLabs (via /api/tts); fall back to the browser voice. */
 export function speak(text: string, agent: string, onEnd?: () => void) {
+  if (typeof window === "undefined") return onEnd?.();
+  stopSpeaking();
+  if (ttsAvailable === false) return speakBrowser(text, agent, onEnd);
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    onEnd?.();
+  };
+  fetch("/api/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, agent }) })
+    .then(async (res) => {
+      if (res.status === 503) ttsAvailable = false;
+      if (!res.ok) throw new Error(`tts ${res.status}`);
+      ttsAvailable = true;
+      const url = URL.createObjectURL(await res.blob());
+      const audio = new Audio(url);
+      currentAudio = audio;
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        finish();
+      };
+      audio.onerror = () => finish();
+      await audio.play();
+    })
+    .catch(() => {
+      if (!done) speakBrowser(text, agent, finish);
+    });
+}
+
+function speakBrowser(text: string, agent: string, onEnd?: () => void) {
   if (typeof window === "undefined" || !window.speechSynthesis) {
     onEnd?.();
     return;
@@ -54,7 +88,12 @@ export function speak(text: string, agent: string, onEnd?: () => void) {
 }
 
 export function stopSpeaking() {
-  if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+  if (typeof window === "undefined") return;
+  window.speechSynthesis?.cancel();
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
 }
 
 // ---------- Speech in: Web Speech API, push to talk (hold space) ----------
