@@ -10,6 +10,12 @@ const DEMOS = [
   { url: "https://www.notion.com", offering: "Usage-based cloud cost monitoring that cuts AWS spend 20-30%" },
 ];
 
+const COMMITTEE = [
+  { role: "CFO", line: "What's the payback period?", color: "#c2410c", tilt: "-rotate-3" },
+  { role: "Tech lead", line: "Who maintains the integration?", color: "#0f766e", tilt: "rotate-2 translate-y-8" },
+  { role: "Procurement", line: "Why you over the cheaper vendor?", color: "#7c3aed", tilt: "-rotate-1" },
+];
+
 export default function Setup() {
   const router = useRouter();
   const [url, setUrl] = useState("");
@@ -31,64 +37,94 @@ export default function Setup() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center gap-10 px-6 py-16">
-      <div>
-        <p className="text-sm uppercase tracking-[0.2em] text-amber-400">Deal Room</p>
-        <h1 className="mt-3 text-4xl font-semibold leading-tight">Rehearse the call before it costs you the deal.</h1>
-        <p className="mt-4 text-zinc-400">
-          Three executives, built from real data about your prospect, hear your pitch, push back, whisper to each other, and vote.
-        </p>
-      </div>
-
-      <form onSubmit={start} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-2">
-          <span className="text-sm text-zinc-400">Prospect company URL</span>
-          <input
-            required
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://acme.com"
-            className="rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3 outline-none focus:border-amber-400"
-          />
-        </label>
-        <label className="flex flex-col gap-2">
-          <span className="text-sm text-zinc-400">What you sell, in one line</span>
-          <input
-            required
-            value={offering}
-            onChange={(e) => setOffering(e.target.value)}
-            placeholder="An AI agent that handles tier-1 support tickets"
-            className="rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3 outline-none focus:border-amber-400"
-          />
-        </label>
-        <button
-          disabled={busy}
-          className="mt-2 rounded-lg bg-amber-400 px-5 py-3 font-medium text-black transition hover:bg-amber-300 disabled:opacity-60"
-        >
-          {busy ? "Researching the account…" : "Build the room"}
-        </button>
-        {err && <p className="text-sm text-red-400">{err}</p>}
-      </form>
-
-      <div className="flex flex-col gap-2 text-sm text-zinc-500">
-        <span>Try a demo account:</span>
-        {DEMOS.map((d) => (
-          <button
-            key={d.url}
-            type="button"
-            onClick={() => {
-              setUrl(d.url);
-              setOffering(d.offering);
-            }}
-            className="text-left text-zinc-300 underline-offset-4 hover:underline"
-          >
-            {d.url} — {d.offering}
-          </button>
-        ))}
-        <Link href="/history" className="mt-4 text-zinc-400 underline-offset-4 hover:underline">
-          View history across sessions →
+    <main className="glow relative flex min-h-screen w-full flex-col">
+      <nav className="mx-auto flex w-full max-w-6xl items-center justify-between px-8 py-6">
+        <span className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <span className="h-2.5 w-2.5 rounded-full bg-accent" /> Deal Room
+        </span>
+        <Link href="/history" className="text-sm text-muted hover:text-ink">
+          Your history
         </Link>
-      </div>
+      </nav>
+
+      <section className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-16 px-8 pb-16 md:grid-cols-[1.1fr_1fr]">
+        <div>
+          <h1 className="text-5xl font-semibold leading-[1.05] tracking-[-0.03em] md:text-6xl">
+            Rehearse the call
+            <br />
+            before it <span className="text-accent">costs</span> you
+            <br />
+            the deal.
+          </h1>
+          <p className="mt-6 max-w-md text-lg leading-relaxed text-muted">
+            Paste your prospect. Three executives, built from real data about that company, hear your pitch, check your numbers, whisper to
+            each other, and vote.
+          </p>
+
+          <form onSubmit={start} className="mt-10 flex max-w-xl flex-col gap-3">
+            <input
+              required
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Prospect website, e.g. acme.com"
+              className="rounded-full border border-line bg-white px-6 py-4 outline-none transition focus:border-ink"
+            />
+            <div className="flex items-center gap-2 rounded-full border border-line bg-white p-1.5 pl-6 transition focus-within:border-ink">
+              <input
+                required
+                value={offering}
+                onChange={(e) => setOffering(e.target.value)}
+                placeholder="What you sell, in one line"
+                className="min-w-0 flex-1 bg-transparent py-2.5 outline-none"
+              />
+              <button disabled={busy} className="pill-dark shrink-0">
+                {busy ? "Researching…" : "Build the room"}
+                <span className="arrow">→</span>
+              </button>
+            </div>
+            {err && <p className="px-4 text-sm text-red-600">{err}</p>}
+          </form>
+
+          <div className="mt-6 flex flex-wrap gap-2 text-sm">
+            <span className="py-1.5 text-muted">Try:</span>
+            {DEMOS.map((d) => (
+              <button
+                key={d.url}
+                type="button"
+                onClick={() => {
+                  setUrl(d.url);
+                  setOffering(d.offering);
+                }}
+                className="rounded-full border border-line bg-white/70 px-3 py-1.5 hover:border-ink"
+              >
+                {d.url.replace(/^https?:\/\/(www\.)?/, "")}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative hidden h-[460px] md:block">
+          {COMMITTEE.map((c, i) => (
+            <div
+              key={c.role}
+              className={`card absolute w-60 p-5 ${c.tilt}`}
+              style={{ left: `${i * 26}%`, top: `${[6, 30, 54][i]}%` }}
+            >
+              <div className="flex items-center gap-3">
+                <span className="grid h-11 w-11 place-items-center rounded-full text-sm font-semibold text-white" style={{ background: c.color }}>
+                  {c.role.slice(0, 2).toUpperCase()}
+                </span>
+                <span className="rounded-full bg-black/[0.05] px-3 py-1 text-sm font-medium">{c.role}</span>
+              </div>
+              <p className="mt-4 text-[15px] leading-snug">“{c.line}”</p>
+              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-black/[0.07]">
+                <div className="h-full rounded-full" style={{ width: `${[38, 46, 31][i]}%`, background: c.color }} />
+              </div>
+              <p className="mt-1.5 text-xs text-muted">conviction {[38, 46, 31][i]}</p>
+            </div>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }

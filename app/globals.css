@@ -3,6 +3,70 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-paper: #f6f3ee;
+  --color-ink: #16140f;
+  --color-muted: #6f695f;
+  --color-line: #e7e1d7;
+  --color-accent: #ff4a1c;
 }
 
-html, body { background: #0b0d12; color: #f4f4f5; }
+html,
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(22, 20, 15, 0.06);
+  border-radius: 20px;
+  box-shadow: 0 10px 40px -12px rgba(40, 30, 20, 0.18), 0 2px 6px rgba(40, 30, 20, 0.05);
+}
+
+.pill-dark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: #fff;
+  padding: 0.55rem 0.6rem 0.55rem 1.25rem;
+  font-weight: 500;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.pill-dark:hover {
+  transform: translateY(-1px);
+}
+.pill-dark:disabled {
+  opacity: 0.5;
+  transform: none;
+}
+.pill-dark .arrow {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--color-ink);
+}
+
+.glow {
+  background: radial-gradient(40% 50% at 30% 60%, rgba(255, 140, 90, 0.18), transparent 70%),
+    radial-gradient(35% 45% at 75% 40%, rgba(255, 200, 120, 0.16), transparent 70%);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.35s ease-out both;
+}

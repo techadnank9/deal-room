@@ -17,25 +17,25 @@ export default function HistoryPage() {
   useEffect(() => {
     api<Trends>("/api/history").then(setT).catch((e) => setErr(String(e)));
   }, []);
-  if (err) return <p className="p-10 text-red-400">{err}</p>;
-  if (!t) return <p className="p-10 text-zinc-400">Loading…</p>;
+  if (err) return <p className="p-10 text-red-600">{err}</p>;
+  if (!t) return <p className="p-10 text-muted">Loading…</p>;
   const maxRaised = Math.max(1, ...t.objections.map((o) => o.times_raised));
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-12">
-      <p className="text-sm uppercase tracking-[0.2em] text-amber-400">History</p>
-      <h1 className="mt-2 text-3xl font-semibold">Where you keep losing them</h1>
-      <p className="mt-1 text-xs text-zinc-600">Source: {t.source}</p>
+      <p className="text-sm uppercase tracking-[0.18em] text-accent">History</p>
+      <h1 className="mt-2 text-4xl font-semibold tracking-[-0.02em]">Where you keep losing them</h1>
+      <p className="mt-1 text-xs text-muted">Source: {t.source}</p>
 
       <h2 className="mt-10 text-lg font-semibold">Weakest objection types</h2>
       <div className="mt-3 space-y-2">
-        {t.objections.length === 0 && <p className="text-sm text-zinc-500">No sessions yet.</p>}
+        {t.objections.length === 0 && <p className="text-sm text-muted">No sessions yet.</p>}
         {t.objections.map((o) => (
           <div key={o.objection_type} className="flex items-center gap-3 text-sm">
-            <span className="w-28 text-zinc-300">{o.objection_type}</span>
-            <div className="h-3 flex-1 rounded bg-zinc-800">
-              <div className="h-3 rounded bg-red-400/80" style={{ width: `${(o.times_raised / maxRaised) * 100}%` }} />
+            <span className="w-28 text-ink/80">{o.objection_type}</span>
+            <div className="h-3 flex-1 rounded bg-black/[0.07]">
+              <div className="h-3 rounded bg-accent/80" style={{ width: `${(o.times_raised / maxRaised) * 100}%` }} />
             </div>
-            <span className="w-40 text-right text-xs text-zinc-500">
+            <span className="w-40 text-right text-xs text-muted">
               raised {o.times_raised}× · avg Δ {Number(o.avg_conviction_delta).toFixed(1)}
             </span>
           </div>
@@ -43,7 +43,7 @@ export default function HistoryPage() {
       </div>
 
       <h2 className="mt-10 text-lg font-semibold">Claims</h2>
-      <p className="mt-2 text-sm text-zinc-400">
+      <p className="mt-2 text-sm text-muted">
         {t.claims.map((c) => `${c.n} ${c.status}`).join(" · ") || "No claims checked yet."}
       </p>
 
@@ -51,16 +51,16 @@ export default function HistoryPage() {
       <ul className="mt-3 space-y-2 text-sm">
         {t.sessions.map((s) => (
           <li key={s.session_id}>
-            <Link href={`/score/${s.session_id}`} className="flex justify-between rounded-md border border-zinc-800 px-3 py-2 hover:bg-zinc-900">
+            <Link href={`/score/${s.session_id}`} className="flex justify-between card flex justify-between px-4 py-3 hover:bg-white">
               <span>{s.company}</span>
-              <span className={s.result === "won" ? "text-emerald-400" : "text-red-400"}>
+              <span className={s.result === "won" ? "text-emerald-700" : "text-red-600"}>
                 {s.result} {s.buys}–{3 - s.buys} · {s.turns} turns
               </span>
             </Link>
           </li>
         ))}
       </ul>
-      <Link href="/" className="mt-8 inline-block text-zinc-400 underline">
+      <Link href="/" className="mt-8 inline-block text-muted underline">
         ← New rehearsal
       </Link>
     </main>

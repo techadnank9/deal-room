@@ -33,7 +33,7 @@ const SLOTS: Record<string, [number, number]> = {
 };
 const DOOR: [number, number] = [4.6, 1.8];
 const EXIT: [number, number] = [5.8, 1.8];
-const ANALYST_SPOT: [number, number] = [-3.3, -1.0];
+const ANALYST_SPOT: [number, number] = [3.0, -2.3];
 
 function execTargets(p: SceneProps, id: string, i: number): { state: ExecState; target: [number, number]; facing: number } {
   const slot = SLOTS[id] ?? [i - 1, -1.6];
@@ -247,9 +247,9 @@ export default function Scene(p: SceneProps) {
 
   return (
     <Canvas shadows camera={{ position: [0, 2.6, 5.6], fov: 50 }} dpr={[1, 2]}>
-      <color attach="background" args={["#0b0d12"]} />
-      <ambientLight intensity={0.35} />
-      <directionalLight position={[3, 5, 3]} intensity={1.2} castShadow shadow-mapSize={[1024, 1024]} />
+      <color attach="background" args={["#f6f3ee"]} />
+      <ambientLight intensity={0.55} />
+      <directionalLight position={[3, 5, 3]} intensity={1.5} color="#fff4e6" castShadow shadow-mapSize={[1024, 1024]} />
       <Environment resolution={128}>
         <Lightformer intensity={2} position={[0, 4, -1]} scale={[6, 2, 1]} rotation-x={Math.PI / 2} />
         <Lightformer intensity={1.2} color="#f3c08a" position={[1.5, 1.8, -4]} scale={[6, 2.3, 1]} />
@@ -291,7 +291,7 @@ export default function Scene(p: SceneProps) {
         color="#f472b6"
         state={p.analystBusy ? "reacting" : "listening"}
         target={ANALYST_SPOT}
-        facing={1.1}
+        facing={-0.5}
         gesture={p.analystBusy ? "nod" : "idle"}
         gestureUntil={p.analystBusy ? Number.MAX_SAFE_INTEGER : 0}
         start={ANALYST_SPOT}
