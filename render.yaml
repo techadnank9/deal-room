@@ -19,6 +19,10 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
       - key: TELEM_API_KEY
         sync: false
       - key: GLASSER_API_KEY

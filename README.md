@@ -57,7 +57,7 @@ See the interactive version at `/how-it-works`.
 | **Telem** | Account research at session start (`/v1/fetch` on the prospect site, `/v1/search` for news, hiring, funding/customers) and live web search for each claim the analyst checks. | `lib/sponsors/telem.ts`, `lib/agents/claims.ts` |
 | **Glasser** | Company enrichment (employees, funding via `enrich`; `tech_stack`) and `people_search` for real titles at the prospect, fed into persona generation. | `lib/sponsors/glasser.ts`, `app/api/session/route.ts` |
 | **Runware** | Generated executive portraits (brief and scorecard cards) and the window backdrop in the 3D room. | `lib/sponsors/runware.ts`, `app/api/session/route.ts`, `app/api/image/route.ts` |
-| **Claude** (Anthropic SDK) | Personas, claim extraction, analyst judgement, three executives per turn in parallel, votes, coaching. Model from `LLM_MODEL` (default `claude-haiku-5-5`), structured outputs. | `lib/llm.ts`, `lib/agents/*` |
+| **Claude** (Anthropic SDK) | Personas, claim extraction, analyst judgement, three executives per turn in parallel, votes, coaching. Model from `LLM_MODEL` (default `claude-haiku-5-5`), structured outputs. With only `OPENAI_API_KEY` set, the same calls run on OpenAI (`OPENAI_MODEL`) with strict JSON schema outputs. | `lib/llm.ts`, `lib/agents/*` |
 
 Every sponsor module has a mock fallback so the app runs when a key is missing; the provider actually used is recorded in the `session_started` event and shown on the brief page.
 
