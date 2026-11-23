@@ -11,7 +11,9 @@ import { SQLITE_PATH } from "./db";
 export type BruinResult = { ran: boolean; ok: boolean; output: string; ms?: number };
 
 const ROOT = process.cwd();
-const PIPELINE = path.join(ROOT, "bruin", "deal_room");
+const PG = Boolean(process.env.DATABASE_URL);
+// Postgres mode (Supabase): pg.sql assets build marts inside the same database; this is the pipeline Bruin Cloud runs.
+const PIPELINE = path.join(ROOT, "bruin", PG ? "deal_room_pg" : "deal_room");
 const CONFIG = path.join(ROOT, "bruin", ".bruin.yml");
 export const DUCKDB_PATH = process.env.BRUIN_DUCKDB_PATH || path.join(ROOT, "data", "bruin.duckdb");
 
@@ -25,13 +27,15 @@ function writeConfig() {
   if (process.env.DATABASE_URL) {
     const u = new URL(process.env.DATABASE_URL);
     source = `      postgres:
-        - name: "app-db"
+        - name: "deal-room-pg"
           username: "${decodeURIComponent(u.username)}"
           password: "${decodeURIComponent(u.password)}"
           host: "${u.hostname}"
           port: ${u.port || 5432}
           database: "${u.pathname.slice(1)}"
           ssl_mode: "${u.searchParams.get("sslmode") || "require"}"`;
+    fs.writeFileSync(CONFIG, `default_environment: default\nenvironments:\n  default:\n    connections:\n${source}\n`);
+    return;
   } else {
     source = `      sqlite:
         - name: "app-db"
@@ -79,6 +83,16 @@ export function lastBruinRun() {
 }
 
 async function query<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[] | null> {
+  if (PG) {
+    const { db } = await import("./db");
+    try {
+      const d = await db();
+      return await d.all<T>(sql, params);
+    } catch (err) {
+      console.error("[bruin] pg read failed:", err instanceof Error ? err.message : err);
+      return null;
+    }
+  }
   if (!fs.existsSync(DUCKDB_PATH)) return null;
   const { DuckDBInstance } = await import("@duckdb/node-api");
   let instance;

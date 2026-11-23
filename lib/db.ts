@@ -58,7 +58,8 @@ const g = globalThis as unknown as { __dealroomDb?: Promise<Driver> };
 async function makeDriver(): Promise<Driver> {
   if (process.env.DATABASE_URL) {
     const { Pool } = await import("pg");
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const local = /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL);
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: local ? undefined : { rejectUnauthorized: false }, max: 5 });
     await pool.query(PG_SCHEMA);
     const toPg = (sql: string) => {
       let i = 0;

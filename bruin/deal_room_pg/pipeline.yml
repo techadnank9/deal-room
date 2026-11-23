@@ -1,0 +1,8 @@
+name: deal_room_pg
+schedule: hourly
+start_date: "2026-11-23"
+catchup: false
+default_connections:
+  postgres: "deal-room-pg"
+default:
+  type: pg.sql
