@@ -1,0 +1,32 @@
+{
+  "data": {
+    "employees": "310",
+    "funding": "$134M",
+    "industry": "information technology & services",
+    "city": "San Francisco, California, United States",
+    "revenue": "$100M",
+    "founded": 2019,
+    "description": "Linear is a design-focused issue-tracking and project management platform tailored for modern software development teams. Founded in 2019 by Karri Saarinen, Tuomas Artman, and Jori Lallo, the company aims to enhance efficiency and speed in project management. Operating as a remote-first organization, Linear is headquartered in San Francisco, California, with additional hubs in New York City and Helsinki, Finland.\n\nThe platform combines issue tracking, project management, and roadmap planning into a cohesive system. It features a robust issue tracking system, tools for organizing projects, and ",
+    "latestFunding": "2025-06-01",
+    "techStack": [
+      "Express",
+      "IPhone / Mobile Compatible",
+      "Viewport Meta",
+      "SSL by Default",
+      "Cloudflare",
+      "Cloudflare Hosting",
+      "Cloudflare DNS",
+      "IPv6",
+      "Google Apps for Business",
+      "Google Webmaster",
+      "Google Cloud",
+      "Next.js",
+      "Comodo SSL",
+      "Comodo PositiveSSL",
+      "Cloudflare SSL"
+    ],
+    "people": [],
+    "likelyTitles": []
+  },
+  "provider": "glasser"
+}

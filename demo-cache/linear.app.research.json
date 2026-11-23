@@ -1,0 +1,65 @@
+{
+  "sources": [
+    {
+      "title": "Linear – The system for product development",
+      "url": "https://linear.app/",
+      "snippet": "# The productdevelopmentsystem for teamsand agents The product development system for teams and agents Purpose-built for planning and building products. Designed for the AI era. ### Faster app launch Render UI before `vehicle_state` sync when minimum required state is present, instead of blocking on full refresh during iOS startup. #### Activity Powering the companies building the future ## **A new species of product tool.** Purpose-built for modern teams with AI workflows at its core, Linear sets a new standard for planning and building products. ## Intake and integrations Automatically turn conversations and customer feedback into actionable issues that are instantly routed, labeled, and prioritized for the right team. ## Planning and monitoring Plan and navigate from idea to launch. Align your team with product initiatives, strategic roadmaps, and clear, up-to-date PRDs. ## AI and automations Build and deploy AI agents that work alongside you as teammates. Work on complex tasks together or delegate entire issues end-to-end. ## Build, review, and ship Streamline code reviews with clear diffs, better context, and fewer back-and-forth comments. Keep PRs moving without sacrificing quality."
+    },
+    {
+      "title": "Mobile Diffs – Changelog",
+      "url": "https://linear.app/changelog/2026-11-04-mobile-diffs",
+      "snippet": "Skip to content →\n\nNovember 5, 2026\n\n## Mobile Diffs\n\nDiffs, Linear’s fast and focused review experience, is now available for iOS and Android.\n\nHere’s what you can do from your phone:\n\n Understand changes with Guided Reviews\n Start on mobile, continue on desktop\n See what needs review in your inbox\n View preview links\n Work with review and cloud coding agents\n Merge approved changes\n\nTry it from the Reviews tab in your Linear mobile app, or learn more in our blog post."
+    },
+    {
+      "title": "Linear vs Jira for Small Teams: 2026 Migration Guide",
+      "url": "https://ox0x.com/articles/linear-vs-jira-for-small-teams-2026-migration-guide",
+      "snippet": "Linear’s 2026 updates have introduced 'Project Insights,' an AI-driven layer that predicts project delays based on historical cycle lead times. This feature is native and requires zero configuration, making it ideal for small teams that need visibility without hiring a dedicated Scrum Master. Linear’s 'Sync' engine remains its crown jewel, ensuring that every team member sees updates in real-time without refreshing the browser—a persistent pain point in Jira’s legacy architecture. [...] # Linear vs Jira for Small Teams: 2026 Migration Guide\n\nFor small teams (under 50) prioritizing speed and developer experience, Linear is the 2026 winner due to its opinionated, keyboard-first UI and streamli"
+    },
+    {
+      "title": "Bring your own key (BYOK) – Changelog",
+      "url": "https://linear.app/changelog/2026-11-12-bring-your-own-key",
+      "snippet": "Skip to content →\n\nNovember 12, 2026\n\n## Bring your own key (BYOK)\n\nYou can now bring your own key to Linear’s cloud coding agent and use your existing provider credits and negotiated rates.\n\nConnect through OpenAI, Anthropic, AWS Bedrock, Azure OpenAI, Claude in Microsoft Foundry, OpenRouter, Vercel, or any gateway that supports the OpenAI Responses or Anthropic Messages API."
+    },
+    {
+      "title": "Scaling Linear's GTM to $100M+ ARR — Cristina Cordova, COO",
+      "url": "https://www.youtube.com/watch?v=x0VSm6IjcDQ",
+      "snippet": "- Published: 2026-11-19\n- View count: 548 views"
+    },
+    {
+      "title": "Now",
+      "url": "https://linear.app/now",
+      "snippet": "# Now All Changelog Product launches From the team From the community Press ### Code review at Linear What a year of engineering data tells us about how agents have changed our review practices. Tim Qi·Nov 16, 2026 → ### Best practices for large workspaces to structure teams in Linear Establish clear boundaries, shared conventions, and workflows that scale. Tyler Black·Nov 10, 2026 → ### Introducing Mobile Diffs Diffs, Linear’s fast and focused code review, is now on iOS and Android. Approve a change, answer a thread, or send a fix back to an agent from your phone. Josh Pyles·Nov 05, 2026 →### Inside Scout24’s rebuild around agents How Germany's leading property marketplace moved 1,100 peopl"
+    },
+    {
+      "title": "Introducing Mobile Diffs",
+      "url": "https://linear.app/now/mobile-diffs",
+      "snippet": "1. Now 2. Product launches # Introducing Mobile Diffs Josh Pyles·November 05, 2026 Coding agents can keep work moving while you’re away from your desk. Today we’re bringing Diffs, Linear’s fast and focused code review, to iOS and Android. We built Linear Diffs because code review was becoming a bottleneck for our own team. What started as an internal tool has become the default way we review code. Guided Reviews make it easier to see what changed and why, and from the same place you can reply to a thread, leave a comment, or send a fix back to an agent. The review sits next to the issue, feedback, or bug report that started the work, so the reasoning behind the request stays connected. ### R"
+    },
+    {
+      "title": "News",
+      "url": "https://linear.app/now/news",
+      "snippet": "# Now All Changelog Product launches From the team From the community Press ### Now Linear writes the code, too Linear Agent can now write code. With Coding Sessions, it can take a bug from triage all the way to a reviewed fix, without the work ever leaving Linear. Karri Saarinen·Jun 11, 2026 → ### Code review should be fast Agents are forcing a change in how we review code. Diffs brings code reviews directly inside Linear, so that the review lives alongside all of your product context. Tuomas Artman·May 28, 2026 → ### Code Intelligence for Linear Agent Linear Agent can now read your codebase and answer questions from the source itself. Karri Saarinen·May 14, 2026 →"
+    },
+    {
+      "title": "https://linear.app/now/series-b",
+      "url": "https://linear.app/now/series-b",
+      "snippet": "# Linear raises $35M Series B led by Accel - Linear\n\nLed by Accel, with participation from Sequoia Capital, 01Advisors, and some of the world’s most successful entrepreneurs including the founders of Slack, Vercel, and Supercell.\n\nWe’re excited to announce that Linear has raised a $35M Series B, led by Miles Clements (Accel), with participation from Stephanie Zhan (Sequoia) and Dick Costolo (01Advisors).\n\nSome of the best product builders and operators are partnering with us and joining the round: Stewart Butterfield (CEO, Slack), Cal Henderson (CTO, Slack), Claire Hughes Johnson (Corporate Advisor and former COO, Stripe), Koen Bok & Jorn van Dijk (Co-Founders, Framer), Christina Cacioppo (C"
+    },
+    {
+      "title": "https://linear.app/now/mercury-linear-ai-agents",
+      "url": "https://linear.app/now/mercury-linear-ai-agents",
+      "snippet": "# Inside Mercury’s six-month journey building with AI agents - Linear\n\nThis past March, Mercury held an internal hackathon and Matt Russell knew exactly what he wanted to work on.\n\nRussell, a staff engineer at the seven-year-old financial technology company, was aware that coding agents were advancing rapidly and he wanted to see what they could do for Mercury. He and his hackathon team created a tool that allowed them to assign issues in Linear to third-party agents, which would return a pull request for engineers to review like any other PR. Almost immediately they saw the potential. The project showed how agents could reliably tackle simple, well-scoped tasks—like straightforward refactor"
+    },
+    {
+      "title": "https://www.mediabistro.com/jobs/3543251307-field-marketing-manager",
+      "url": "https://www.mediabistro.com/jobs/3543251307-field-marketing-manager",
+      "snippet": "# Field Marketing Manager Job in New York, NY at Warmada\n\nAt Linear, we're building the product development system for teams and agents. AI is fundamentally changing how software gets built, and we’re shaping the tools this new era requires.  \nFounded in 2019, Linear has become the platform of choice for more than 50,000 companies (including OpenAI, Coinbase, and Ramp) to plan, build, and ship their products. Today, our team is distributed across North America, Europe, and Australia, and we’re continuing to grow internationally. What unites us is relentless focus, fast execution, and a deep care for software craftsmanship.  \nField marketing at Linear is just getting started. Its job is to pu"
+    },
+    {
+      "title": "https://opentools.ai/news/oracle-deep-trust-ai-architecture-database-object-api-apex-controls",
+      "url": "https://opentools.ai/news/oracle-deep-trust-ai-architecture-database-object-api-apex-controls",
+      "snippet": "# Oracle outlines four layers of controls in its Deep Trust AI architecture\n\nOct 26, 2026\n\n### Ollama adds Phonon speech on Macs, with different licences for model variants\n\nOllama’s October 24 speech release brings Phonon to Apple Silicon Macs. The default 31M English model and 40M language variants differ in licence and voice scope; Windows and Linux support remain forthcoming.\n\nOllamaPhononText-to-speech\n\nOct 26, 2026\n\n### Shopify moves Knowledge base into admin, with different rules for migrated facts\n\nShopify’s October 26 update brings merchant facts for AI agents into admin. New storefront-derived drafts need publication, while some migrated facts are already live; the standalone app e"
+    }
+  ],
+  "provider": "telem"
+}

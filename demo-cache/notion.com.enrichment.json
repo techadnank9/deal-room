@@ -1,0 +1,54 @@
+{
+  "data": {
+    "employees": "7300",
+    "funding": "$605M",
+    "industry": "information technology & services",
+    "city": "San Francisco, California, United States",
+    "revenue": "$600M",
+    "founded": 2016,
+    "description": "Notion is a connected all-in-one workspace company based in San Francisco, with offices around the world. It combines documents, wikis, projects, and databases into a single product, featuring Notion AI and custom agents to automate repetitive tasks. The platform aims to streamline workflows by consolidating various tools into one flexible environment.\n\nUsers can create and manage docs for collaborative writing, wikis for shared knowledge, projects for tracking team efforts, and databases for structured information. Notion offers a free plan with unlimited pages and core features, while paid p",
+    "latestFunding": "2026-01-01",
+    "techStack": [
+      "GoDaddy DNS",
+      "GoDaddy",
+      "GoDaddy Email",
+      "Starfield Technologies",
+      "Cloudflare DNS",
+      "Cloudflare Hosting",
+      "Cloudflare SSL",
+      "IPv6",
+      "Viewport Meta",
+      "IPhone / Mobile Compatible",
+      "Apple Mobile Web Clips Icon",
+      "Apple Mobile Web App Capable",
+      "Smart App Banner",
+      "Next.js",
+      "PHP"
+    ],
+    "people": [
+      {
+        "name": "Rama",
+        "title": "Chief Financial Officer (CFO)"
+      },
+      {
+        "name": "Gina",
+        "title": "Head of Procurement"
+      },
+      {
+        "name": "Dee",
+        "title": "Procurement Manager"
+      },
+      {
+        "name": "Michael",
+        "title": "Procurement Operations Manager"
+      }
+    ],
+    "likelyTitles": [
+      "Chief Financial Officer (CFO)",
+      "Head of Procurement",
+      "Procurement Manager",
+      "Procurement Operations Manager"
+    ]
+  },
+  "provider": "glasser"
+}
