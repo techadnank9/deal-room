@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import DecisionLog, { type LogEntry } from "@/components/room/DecisionLog";
+import ModelPicker from "@/components/ModelPicker";
 import { api, EXEC_COLOR, EXEC_LABEL, initials } from "@/lib/ui";
 import { speak, stopSpeaking, usePushToTalk } from "@/lib/voice";
 import { MAX_TURNS, type ClaimCheck, type ExecId, type Gesture, type SessionState, type TurnResponse, type Vote } from "@/lib/types";
@@ -38,6 +39,7 @@ export default function RoomPage() {
   const [userTalking, setUserTalking] = useState(false);
   const [muted, setMuted] = useState(false);
   const [logOpen, setLogOpen] = useState(true);
+  const [model, setModel] = useState("");
   const mutedRef = useRef(false);
   const logKey = useRef(0);
   const turnRef = useRef(0);
@@ -62,6 +64,7 @@ export default function RoomPage() {
       .then(({ session }) => {
         if (session.status === "finished") return router.replace(`/score/${id}`);
         setS(session);
+        setModel(session.model ?? "");
         setTurn(session.turn);
         setConvictions(Object.fromEntries(session.personas.map((p) => [p.id, p.conviction])));
         push(
@@ -205,7 +208,16 @@ export default function RoomPage() {
             Turn {turn} of {MAX_TURNS}
           </span>
         </div>
-        <div className="pointer-events-auto flex gap-2">
+        <div className="pointer-events-auto flex items-center gap-2">
+          <ModelPicker
+            compact
+            value={model}
+            onChange={async (m) => {
+              setModel(m);
+              await fetch("/api/session", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, model: m }) });
+              push([{ turn: turnRef.current, actor: "director", action: `model switched to ${m}` }]);
+            }}
+          />
           <button onClick={() => setMuted((m) => !m)} className="card px-4 py-2.5 text-sm">
             {muted ? "Voices off" : "Voices on"}
           </button>

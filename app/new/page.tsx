@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ModelPicker from "@/components/ModelPicker";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/ui";
@@ -21,6 +22,7 @@ export default function Setup() {
   const [url, setUrl] = useState("");
   const [offering, setOffering] = useState("");
   const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState("");
   const [err, setErr] = useState("");
 
   async function start(e: React.FormEvent) {
@@ -28,7 +30,7 @@ export default function Setup() {
     setBusy(true);
     setErr("");
     try {
-      const { id } = await api<{ id: string }>("/api/session", { url, offering });
+      const { id } = await api<{ id: string }>("/api/session", { url, offering, model });
       router.push(`/brief/${id}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -82,6 +84,10 @@ export default function Setup() {
                 <span className="arrow">→</span>
               </button>
             </div>
+            <label className="flex items-center gap-3 px-2 text-sm text-muted">
+              Model for the executives
+              <ModelPicker value={model} onChange={setModel} />
+            </label>
             {err && <p className="px-4 text-sm text-red-600">{err}</p>}
           </form>
 

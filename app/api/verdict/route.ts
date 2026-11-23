@@ -1,3 +1,4 @@
+import { withModel } from "@/lib/llm";
 import { loadSession, saveSession, writeEvents } from "@/lib/db";
 import { castVote } from "@/lib/agents/verdict";
 import { coachFixes } from "@/lib/agents/coach";
@@ -7,7 +8,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  const { id } = (await req.json()) as { id: string };
+  const body = (await req.json()) as { id: string };
+  const current = await loadSession(body.id);
+  return withModel(current?.model, () => handle(body));
+}
+
+async function handle(body: { id: string }) {
+  const { id } = body;
   const s = await loadSession(id);
   if (!s) return Response.json({ error: "not found" }, { status: 404 });
   if (s.status === "finished" && s.votes) return Response.json({ votes: s.votes, fixes: s.fixes ?? [], bruin: null });

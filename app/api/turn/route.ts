@@ -1,3 +1,4 @@
+import { withModel } from "@/lib/llm";
 import { loadSession, saveSession, writeEvents, type EventRow } from "@/lib/db";
 import { analystCheck, extractClaims } from "@/lib/agents/claims";
 import { executiveTurn, pickSpeaker } from "@/lib/agents/executive";
@@ -8,7 +9,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  const { id, text } = (await req.json()) as { id: string; text: string };
+  const body = (await req.json()) as { id: string; text: string };
+  const current = await loadSession(body.id);
+  return withModel(current?.model, () => handle(body));
+}
+
+async function handle(body: { id: string; text: string }) {
+  const { id, text } = body;
   const s = await loadSession(id);
   if (!s) return Response.json({ error: "not found" }, { status: 404 });
   if (s.status !== "active") return Response.json({ error: "session finished" }, { status: 409 });

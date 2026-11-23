@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { defaultModel, withModel } from "@/lib/llm";
 import { listSessions, loadSession, saveSession, writeEvents } from "@/lib/db";
 import { buildBriefAndPersonas } from "@/lib/agents/personas";
 import { domainOf, researchAccount } from "@/lib/sponsors/telem";
@@ -25,7 +26,24 @@ async function accountMemory(domain: string): Promise<string> {
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json()) as { url?: string; offering?: string };
+  const body = (await req.json()) as { url?: string; offering?: string; model?: string };
+  const model = (body.model || "").trim() || defaultModel();
+  return withModel(model, () => create(body, model));
+}
+
+/** Change the model for a session at any point; the next turn uses it. */
+export async function PATCH(req: Request) {
+  const { id, model } = (await req.json()) as { id?: string; model?: string };
+  const s = id ? await loadSession(id) : null;
+  if (!s) return Response.json({ error: "not found" }, { status: 404 });
+  if (!model?.trim()) return Response.json({ error: "model required" }, { status: 400 });
+  s.model = model.trim();
+  await saveSession(s);
+  await writeEvents([{ session_id: s.id, turn: s.turn, actor: "director", event_type: "speaker_pick", text: `model switched to ${s.model}` }]);
+  return Response.json({ model: s.model });
+}
+
+async function create(body: { url?: string; offering?: string }, model: string) {
   const url = (body.url || "").trim();
   const offering = (body.offering || "").trim();
   if (!url || !offering) return Response.json({ error: "url and offering are required" }, { status: 400 });
@@ -80,6 +98,7 @@ export async function POST(req: Request) {
     bandProvider: band.provider,
     createdAt: new Date().toISOString(),
     imagesPending: runwareEnabled(),
+    model,
   };
   await saveSession(session);
   if (runwareEnabled()) void generateArt(session);
@@ -89,7 +108,7 @@ export async function POST(req: Request) {
       turn: 0,
       actor: "director",
       event_type: "session_started",
-      text: `${brief.company} | ${offering} | llm=${source} research=${research.provider} enrich=${enrichment.provider} band=${band.provider}${memory ? " | memory=yes" : ""}`,
+      text: `${brief.company} | ${offering} | llm=${source}:${model} research=${research.provider} enrich=${enrichment.provider} band=${band.provider}${memory ? " | memory=yes" : ""}`,
       source_url: url,
     },
     ...personas.map((p) => ({

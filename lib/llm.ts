@@ -1,29 +1,54 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 type Schema = Record<string, unknown>;
 
-// Fast model for per-turn agent calls. Override with LLM_MODEL.
-export const LLM_MODEL = process.env.LLM_MODEL || "claude-haiku-5-5";
+// The model is chosen per session (setup page or the room's model switcher) and can change any time.
+// Provider follows the model name: "claude-*" uses Anthropic, anything else uses OpenAI.
+export const MODEL_OPTIONS = [
+  "gpt-4.1-mini",
+  "gpt-4.1",
+  "gpt-5.4-mini",
+  "gpt-5.5",
+  "gpt-6.2-sol",
+  "claude-haiku-5-5",
+  "claude-sonnet-5-5",
+  "claude-opus-5-5",
+];
 
-// OpenAI is used when only OPENAI_API_KEY is set. Model from OPENAI_MODEL.
-export const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+const modelScope = new AsyncLocalStorage<string>();
+/** Run fn with a request-scoped model; every llmJSON call inside uses it. */
+export function withModel<T>(model: string | undefined, fn: () => Promise<T>): Promise<T> {
+  return model ? modelScope.run(model, fn) : fn();
+}
 
-function provider(): "anthropic" | "openai" | null {
-  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "anthropic";
-  if (process.env.OPENAI_API_KEY) return "openai";
-  return null;
+export function defaultModel() {
+  if (process.env.LLM_MODEL) return process.env.LLM_MODEL;
+  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "claude-haiku-5-5";
+  return process.env.OPENAI_MODEL || "gpt-4.1-mini";
+}
+
+export function currentModel() {
+  return modelScope.getStore() || defaultModel();
+}
+
+function provider(model: string): "anthropic" | "openai" | null {
+  const anthropic = Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  const openai = Boolean(process.env.OPENAI_API_KEY);
+  if (model.startsWith("claude")) return anthropic ? "anthropic" : null;
+  return openai ? "openai" : null;
 }
 
 export function hasLLM() {
-  return provider() !== null;
+  return provider(currentModel()) !== null;
 }
 
-async function openaiJSON(system: string, user: string, schema: Schema, maxTokens: number): Promise<string> {
+async function openaiJSON(model: string, system: string, user: string, schema: Schema, maxTokens: number): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
+      model,
       max_completion_tokens: maxTokens,
       messages: [
         { role: "system", content: system },
@@ -60,15 +85,16 @@ export async function llmJSON<T>(opts: {
   maxTokens?: number;
   label?: string;
 }): Promise<{ data: T; source: "llm" | "mock" }> {
-  const p = provider();
+  const model = currentModel();
+  const p = provider(model);
   if (!p) return { data: opts.mock(), source: "mock" };
   try {
     if (p === "openai") {
-      const text = await openaiJSON(opts.system, opts.user, opts.schema, opts.maxTokens ?? 4000);
+      const text = await openaiJSON(model, opts.system, opts.user, opts.schema, opts.maxTokens ?? 4000);
       return { data: JSON.parse(text) as T, source: "llm" };
     }
     const res = await getClient().messages.create({
-      model: LLM_MODEL,
+      model,
       max_tokens: opts.maxTokens ?? 4000,
       system: opts.system,
       output_config: {

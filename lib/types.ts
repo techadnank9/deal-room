@@ -75,6 +75,7 @@ export type SessionState = {
   backdropUrl?: string | null;
   portraits?: Partial<Record<ExecId, string>>;
   imagesPending?: boolean;
+  model?: string;
   createdAt: string;
 };
 
