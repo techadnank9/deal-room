@@ -18,7 +18,7 @@ const CONFIG = path.join(ROOT, "bruin", ".bruin.yml");
 export const DUCKDB_PATH = process.env.BRUIN_DUCKDB_PATH || path.join(ROOT, "data", "bruin.duckdb");
 
 function bruinBin() {
-  const candidates = [process.env.BRUIN_BIN, path.join(os.homedir(), ".local", "bin", "bruin"), "/usr/local/bin/bruin"].filter(Boolean) as string[];
+  const candidates = [process.env.BRUIN_BIN, path.join(ROOT, "bin", "bruin"), path.join(os.homedir(), ".local", "bin", "bruin"), "/usr/local/bin/bruin"].filter(Boolean) as string[];
   return candidates.find((c) => fs.existsSync(c)) ?? "bruin";
 }
 

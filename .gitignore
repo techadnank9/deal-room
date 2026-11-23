@@ -49,3 +49,4 @@ __pycache__/
 /bruin/.bruin.yml
 /bruin/logs
 !.env.example
+/bin

@@ -1,0 +1,31 @@
+# Render blueprint: one Node web service. Database is Supabase (use the session pooler URL; Render has no IPv6).
+services:
+  - type: web
+    name: dealroom
+    runtime: node
+    plan: free
+    region: virginia
+    buildCommand: curl -LsSf https://getbruin.com/install/cli | BINDIR=./bin sh && npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: LLM_MODEL
+        value: claude-haiku-5-5
+      - key: BRUIN_BIN
+        value: /opt/render/project/src/bin/bruin
+      - key: DATABASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: TELEM_API_KEY
+        sync: false
+      - key: GLASSER_API_KEY
+        sync: false
+      - key: RUNWARE_API_KEY
+        sync: false
+      - key: BAND_API_KEY
+        sync: false
+      - key: BAND_AGENTS
+        sync: false
