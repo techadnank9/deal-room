@@ -7,7 +7,7 @@ export async function extractClaims(utterance: string, brief: Brief): Promise<st
   const { data } = await llmJSON<{ claims: string[] }>({
     label: "claims",
     system:
-      "Extract checkable factual claims from a salesperson's line. A checkable claim states a specific fact, usually with a number, about the seller's product, customers, the market, or the prospect company. Ignore opinions, promises, and questions. Return at most 2 claims, each rewritten as a standalone sentence. Return an empty list if there are none.",
+      "Extract checkable factual claims from a salesperson's line. A checkable claim states a specific fact, usually with a number, about the seller's product, customers, the market, or the prospect company. Ignore opinions, questions, and anything the seller is OFFERING or COMMITTING to (pricing, terms, pilots, guarantees, refunds, timelines they promise): those are proposals, not facts to check. Return at most 2 claims, each rewritten as a standalone sentence. Return an empty list if there are none.",
     user: `Prospect: ${brief.company}\nSalesperson said: "${utterance}"`,
     schema: obj({ claims: arr(str()) }),
     maxTokens: 800,

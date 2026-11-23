@@ -94,8 +94,19 @@ export async function runRound(
       tone: t.convictionDelta > 0 ? "good" : t.convictionDelta < 0 ? "bad" : "neutral", detail: `thinks: ${t.privateThought}`, reason: t.reason,
     });
 
-    // Alliances: ally with a human, or betray a previous ally.
-    const want = (t.allyWith || "").trim();
+    // Each agent tracks which human's lines actually moved it (its own memory of who serves its goals).
+    if (!input.auto && input.player) {
+      s.playerScores ??= {};
+      const sc = (s.playerScores[p.id] ??= {});
+      sc[player] = (sc[player] ?? 0) + t.convictionDelta;
+    }
+    // Alliances: the agent's own choice; if it stays silent, its goal rule decides from turn 3 on.
+    let want = (t.allyWith || "").trim();
+    if ((!want || want.toLowerCase() === "none") && turn >= 3 && (s.players?.length ?? 0) >= 2) {
+      const sc = s.playerScores?.[p.id] ?? {};
+      const best = Object.entries(sc).sort((a, b) => b[1] - a[1])[0];
+      if (best && best[1] > 0) want = best[0];
+    }
     const matched = (s.players ?? []).find((x) => want.toLowerCase().includes(x.name.toLowerCase()));
     const wantValid = want && want.toLowerCase() !== "none" ? (matched?.name ?? (players.size === 0 ? want : null)) : null;
     const prev = s.alliances[p.id] ?? null;

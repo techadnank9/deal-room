@@ -91,6 +91,7 @@ export type SessionState = {
   lastHumanAt?: number;
   busyUntil?: number;
   autoStreak?: number;
+  playerScores?: Record<string, Record<string, number>>;
   tactic?: "probe" | "pressure" | "close";
   tacticHistory?: { turn: number; tactic: string; performance: string; reason: string }[];
   createdAt: string;

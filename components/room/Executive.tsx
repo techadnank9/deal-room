@@ -261,10 +261,10 @@ function GLBBody(props: BodyProps & { url: string }) {
     rig.mixer.update(0);
     rig.controlled.forEach((bone, i) => rig.base[i].copy(bone.quaternion));
     current.current = idle ?? null;
+    // Only stop: the memoised rig is reused when React re-runs this effect (Strict Mode),
+    // and uncaching here would leave actions the next run plays without a cache index.
     return () => {
       rig.mixer.stopAllAction();
-      rig.mixer.uncacheRoot(rig.model);
-      rig.model.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.dispose(); });
     };
   }, [rig]);
 
