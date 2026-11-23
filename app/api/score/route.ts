@@ -1,5 +1,5 @@
 import { loadSession, readEvents } from "@/lib/db";
-import { readScorecard } from "@/lib/bruin";
+import { lastBruinRun, readScorecard } from "@/lib/bruin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,5 +10,5 @@ export async function GET(req: Request) {
   const s = await loadSession(id);
   if (!s) return Response.json({ error: "not found" }, { status: 404 });
   const [events, bruin] = await Promise.all([readEvents(id), readScorecard(id)]);
-  return Response.json({ session: s, events, bruin });
+  return Response.json({ session: s, events, bruin, bruinRun: lastBruinRun() });
 }

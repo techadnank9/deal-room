@@ -1,0 +1,29 @@
+name: raw.events
+type: ingestr
+description: Raw session events written by the app (one row per utterance, claim check, whisper, conviction change, vote).
+parameters:
+  source_connection: app-db
+  source_table: events
+  destination: duckdb
+columns:
+  - name: id
+    type: integer
+    checks:
+      - name: not_null
+      - name: unique
+  - name: session_id
+    type: varchar
+    checks:
+      - name: not_null
+  - name: actor
+    type: varchar
+    checks:
+      - name: not_null
+      - name: accepted_values
+        value: [user, cfo, tech, procurement, analyst, director]
+  - name: event_type
+    type: varchar
+    checks:
+      - name: not_null
+      - name: accepted_values
+        value: [session_started, utterance, claim_check, whisper, conviction_change, thought, speaker_pick, vote]

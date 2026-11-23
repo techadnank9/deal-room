@@ -41,3 +41,10 @@ yarn-error.log*
 next-env.d.ts
 
 /data
+
+logs/runs
+logs/*.log
+__pycache__/
+*.py[cod]
+/bruin/.bruin.yml
+/bruin/logs

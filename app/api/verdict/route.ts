@@ -33,6 +33,7 @@ export async function POST(req: Request) {
       };
     }),
   );
-  const bruin = await runBruin();
-  return Response.json({ votes, fixes: s.fixes, bruin });
+  // Bruin rebuilds the scorecard + trend tables; the scorecard page waits for it.
+  void runBruin();
+  return Response.json({ votes, fixes: s.fixes, bruin: { started: true } });
 }
