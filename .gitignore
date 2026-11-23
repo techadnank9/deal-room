@@ -48,3 +48,4 @@ __pycache__/
 *.py[cod]
 /bruin/.bruin.yml
 /bruin/logs
+!.env.example
