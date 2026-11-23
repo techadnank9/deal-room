@@ -18,10 +18,11 @@ type Deal = {
   checks: { key: string; label: string; met: boolean }[];
   score: number;
   meetings: number;
+  record: { won: number; lost: number };
   turns: number;
   lastActivity: string;
 };
-type Data = { deals: Deal[]; totals: { accounts: number; won: number; lost: number; open: number; highRisk: number } };
+type Data = { deals: Deal[]; totals: { accounts: number; won: number; lost: number; open: number; highRisk: number; meetingsWon: number; meetingsLost: number } };
 
 const STAGE_STYLE: Record<string, string> = {
   Won: "bg-emerald-100 text-emerald-800",
@@ -71,8 +72,8 @@ export default function DealsPage() {
           {[
             { k: "Accounts", v: d.totals.accounts, f: "All" },
             { k: "Open", v: d.totals.open, f: "In meeting" },
-            { k: "Won", v: d.totals.won, f: "Won" },
-            { k: "Lost", v: d.totals.lost, f: "Lost" },
+            { k: "Meetings won", v: d.totals.meetingsWon, f: "Won" },
+            { k: "Meetings lost", v: d.totals.meetingsLost, f: "Lost" },
             { k: "At risk", v: d.totals.highRisk, f: "At risk" },
           ].map((x) => (
             <button
@@ -101,7 +102,7 @@ export default function DealsPage() {
               <div className="min-w-0">
                 <p className="truncate font-semibold">{x.company}</p>
                 <p className="truncate text-xs text-muted">
-                  {x.domain} · {x.meetings} meeting{x.meetings > 1 ? "s" : ""} · {new Date(x.lastActivity).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  {x.domain} · {x.meetings} meeting{x.meetings > 1 ? "s" : ""} ({x.record.won}W {x.record.lost}L) · {new Date(x.lastActivity).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                 </p>
                 {x.players.length > 0 && <p className="truncate text-xs text-muted">Team: {x.players.join(", ")}</p>}
               </div>

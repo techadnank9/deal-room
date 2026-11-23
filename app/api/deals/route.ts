@@ -30,7 +30,9 @@ export async function GET() {
     byDomain.set(k, [...(byDomain.get(k) ?? []), s]);
   }
   const deals = [...byDomain.entries()].map(([domain, list]) => {
-    const s = list[0]; // most recent
+    // Most recent meeting that actually happened; fall back to the newest scheduled one.
+    const s = list.find((x) => x.turn > 0) ?? list[0];
+    const record = { won: list.filter((x) => x.status === "finished" && (x.votes ?? []).filter((v) => v.vote === "buy").length >= 2).length, lost: list.filter((x) => x.status === "finished" && (x.votes ?? []).filter((v) => v.vote === "buy").length < 2).length };
     const avg = Math.round(s.personas.reduce((a, p) => a + p.conviction, 0) / s.personas.length);
     const buys = (s.votes ?? []).filter((v) => v.vote === "buy").length;
     const stage =
@@ -52,6 +54,7 @@ export async function GET() {
       checks,
       score: Math.round((checks.filter((c) => c.met).length / checks.length) * 100),
       meetings: list.length,
+      record,
       turns: s.turn,
       lastActivity: s.createdAt,
       portrait: s.portraits ?? {},
@@ -61,6 +64,8 @@ export async function GET() {
     accounts: deals.length,
     won: deals.filter((d) => d.stage === "Won").length,
     lost: deals.filter((d) => d.stage === "Lost").length,
+    meetingsWon: deals.reduce((a, d) => a + d.record.won, 0),
+    meetingsLost: deals.reduce((a, d) => a + d.record.lost, 0),
     open: deals.filter((d) => d.stage === "In meeting" || d.stage === "Meeting scheduled").length,
     highRisk: deals.filter((d) => d.risk === "High" && d.stage !== "Lost").length,
   };
