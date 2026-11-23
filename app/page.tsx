@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { BuiltWith, FinalCta, Footer, Grounded, Hero, HowItWorks, Nav, Scorecard, Tagline } from "@/components/landing/Sections";
 
 export const metadata: Metadata = {
-  title: "Deal Room · Rehearse the sales call before it counts",
+  title: "Deal Room · Humans and AI executives, one deal room",
   description:
     "Paste a prospect URL. Three AI executives built from real research hear your pitch by voice, fact check your numbers, and vote, then you get a scorecard with evidence.",
 };

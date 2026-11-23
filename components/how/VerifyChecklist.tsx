@@ -1,7 +1,7 @@
 const ITEMS: { title: string; how: string; where: string }[] = [
   {
     title: "Three or more agents, visible as 3D characters",
-    how: "Start a rehearsal. The CFO, tech lead and procurement sit at the table and gesture, whisper and lean in as they react.",
+    how: "Start a meeting. The CFO, tech lead and procurement sit at the table and gesture, whisper and lean in as they react.",
     where: "components/room/Executive.tsx",
   },
   {
@@ -26,7 +26,7 @@ const ITEMS: { title: string; how: string; where: string }[] = [
   },
   {
     title: "Memory across sessions",
-    how: "Rehearse the same account twice. The second committee remembers the claims that failed the first time.",
+    how: "Meet the same account twice. The second committee remembers the claims that failed the first time.",
     where: "app/api/session/route.ts",
   },
 ];

@@ -24,7 +24,7 @@ export async function extractClaims(utterance: string, brief: Brief): Promise<st
 /** Analyst agent: checks a claim against web research and the account brief. */
 export async function analystCheck(claim: string, brief: Brief): Promise<ClaimCheck> {
   const { sources } = await searchWeb(claim);
-  const all = [...sources, ...brief.sources];
+  const all = [...sources, ...(brief.seller?.sources ?? []), ...brief.sources];
   const evidence = [
     ...brief.facts.map((f) => `FACT: ${f.text} (${f.sourceUrl})`),
     ...all.map((s) => `SOURCE: ${s.title} (${s.url}): ${s.snippet}`),

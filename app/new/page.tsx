@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ModelPicker from "@/components/ModelPicker";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -23,6 +23,7 @@ export default function Setup() {
   const [offering, setOffering] = useState("");
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState("");
+  const [sellerUrl, setSellerUrl] = useState("");
   const [err, setErr] = useState("");
 
   async function start(e: React.FormEvent) {
@@ -30,7 +31,7 @@ export default function Setup() {
     setBusy(true);
     setErr("");
     try {
-      const { id } = await api<{ id: string }>("/api/session", { url, offering, model });
+      const { id } = await api<{ id: string }>("/api/session", { url, offering, model, sellerUrl });
       router.push(`/brief/${id}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -44,6 +45,9 @@ export default function Setup() {
         <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
           <span className="h-2.5 w-2.5 rounded-full bg-accent" /> Deal Room
         </Link>
+        <Link href="/deals" className="mr-4 text-sm text-muted hover:text-ink">
+          Pipeline
+        </Link>
         <Link href="/history" className="text-sm text-muted hover:text-ink">
           Your history
         </Link>
@@ -52,7 +56,7 @@ export default function Setup() {
       <section className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-16 px-8 pb-16 md:grid-cols-[1.1fr_1fr]">
         <div>
           <h1 className="text-5xl font-semibold leading-[1.05] tracking-[-0.03em] md:text-6xl">
-            Rehearse the call
+            Open the deal room
             <br />
             before it <span className="text-accent">costs</span> you
             <br />
@@ -71,6 +75,12 @@ export default function Setup() {
               placeholder="Prospect website, e.g. acme.com"
               className="rounded-full border border-line bg-white px-6 py-4 outline-none transition focus:border-ink"
             />
+            <input
+              value={sellerUrl}
+              onChange={(e) => setSellerUrl(e.target.value)}
+              placeholder="Your company website (optional): the committee researches you too"
+              className="rounded-full border border-line bg-white px-6 py-4 outline-none transition focus:border-ink"
+            />
             <div className="flex items-center gap-2 rounded-full border border-line bg-white p-1.5 pl-6 transition focus-within:border-ink">
               <input
                 required
@@ -80,7 +90,7 @@ export default function Setup() {
                 className="min-w-0 flex-1 bg-transparent py-2.5 outline-none"
               />
               <button disabled={busy} className="pill-dark shrink-0">
-                {busy ? "Researching…" : "Build the room"}
+                {busy ? "Researching…" : "Research and open the room"}
                 <span className="arrow">→</span>
               </button>
             </div>
@@ -88,6 +98,7 @@ export default function Setup() {
               Model for the executives
               <ModelPicker value={model} onChange={setModel} />
             </label>
+            {busy && <ResearchProgress company={url} />}
             {err && <p className="px-4 text-sm text-red-600">{err}</p>}
           </form>
 
@@ -132,5 +143,37 @@ export default function Setup() {
         </div>
       </section>
     </main>
+  );
+}
+
+const STEPS = [
+  "Reading their website (Telem)",
+  "Searching recent news (Telem)",
+  "Searching hiring signals (Telem)",
+  "Searching funding and customers (Telem)",
+  "Company size, funding, tech stack, people (Glasser)",
+  "Researching your company (Telem)",
+  "Writing the business breakdown",
+  "Building the buying committee",
+];
+
+function ResearchProgress({ company }: { company: string }) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setN((x) => Math.min(x + 1, STEPS.length - 1)), 2200);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="card mt-2 p-4 text-sm">
+      <p className="text-xs uppercase tracking-[0.16em] text-muted">Researching {company.replace(/^https?:\/\/(www\.)?/, "")}</p>
+      <ol className="mt-2 space-y-1">
+        {STEPS.map((st, i) => (
+          <li key={st} className={`flex items-center gap-2 ${i < n ? "text-ink" : i === n ? "font-semibold text-ink" : "text-muted/60"}`}>
+            <span className={`h-2 w-2 rounded-full ${i < n ? "bg-emerald-600" : i === n ? "animate-pulse bg-accent" : "bg-black/10"}`} />
+            {st}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }

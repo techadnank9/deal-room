@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Deal Room",
-  description: "Rehearse your sales call against an AI buying committee",
+  description: "Sell to an AI buying committee built from real data about your prospect",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

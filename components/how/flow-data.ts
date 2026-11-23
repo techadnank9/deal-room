@@ -96,7 +96,7 @@ export const NODES: FlowNode[] = [
     sub: "URL + what you sell",
     files: ["app/api/session/route.ts"],
     detail:
-      "The rehearsal starts from a real company website. The session route fans out to research, enrichment and memory in parallel with Promise.all.",
+      "The meeting starts from a real company website. The session route fans out to research, enrichment and memory in parallel with Promise.all.",
   },
   {
     id: "s_telem",
@@ -128,11 +128,11 @@ export const NODES: FlowNode[] = [
     col: 1,
     row: 2,
     tag: "memory",
-    title: "Past rehearsals",
+    title: "Past meetings",
     sub: "claims that failed before",
     files: ["app/api/session/route.ts"],
     detail:
-      "accountMemory() summarises earlier finished rehearsals against the same account. The executives remember which of your claims failed last time, so their decisions change across sessions.",
+      "accountMemory() summarises earlier finished meetings against the same account. The executives remember which of your claims failed last time, so their decisions change across sessions.",
   },
   {
     id: "s_personas",
@@ -439,7 +439,7 @@ export const NODES: FlowNode[] = [
     title: "user_trends",
     sub: "across all sessions",
     files: ["bruin/deal_room/assets/mart.user_trends.sql"],
-    detail: "How you improve across rehearsals, including loss_rate. Depends on objections_by_type and session_scorecard.",
+    detail: "How you improve across meetings, including loss_rate. Depends on objections_by_type and session_scorecard.",
   },
   {
     id: "b_history",
@@ -484,7 +484,7 @@ export const EDGES: FlowEdge[] = [
   { from: "s_personas", to: "s_band" },
   { from: "s_personas", to: "s_runware" },
   { from: "s_personas", to: "s_events" },
-  { from: "s_events", to: "s_memory", route: "below", dashed: true, label: "next rehearsal" },
+  { from: "s_events", to: "s_memory", route: "below", dashed: true, label: "next meeting" },
 
   { from: "t_speak", to: "t_claims" },
   { from: "t_claims", to: "t_handoff" },

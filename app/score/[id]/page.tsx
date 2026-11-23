@@ -198,7 +198,7 @@ export default function ScorePage() {
 
         <div className="mt-10 flex gap-3">
           <Link href="/new" className="pill-dark">
-            Rehearse again <span className="arrow">→</span>
+            New meeting <span className="arrow">→</span>
           </Link>
           <Link href="/history" className="rounded-full border border-line bg-white px-5 py-2.5">
             Your trends

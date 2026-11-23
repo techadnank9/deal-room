@@ -1,6 +1,8 @@
 import { enm, int, llmJSON, obj, str } from "../llm";
+import type { ExecId as _E } from "../types";
 import { TACTIC_BRIEF } from "./director";
 import {
+  WORLD_EVENTS,
   GESTURES,
   OBJECTION_TYPES,
   type ClaimCheck,
@@ -26,12 +28,39 @@ const TURN_SCHEMA = obj({
   gesture: enm(GESTURES),
   reason: str("One sentence: why your conviction moved (or did not)"),
   objectionType: enm(OBJECTION_TYPES),
+  allyWith: str('Name of the human player you are currently backing, or "none". Changing away from someone you backed is a betrayal.'),
+  offer: str('A trade you propose to one named human player ("Give us X and I will back you"), or "" for none'),
+  worldEvent: enm([...WORLD_EVENTS]),
 });
 
 function personaBlock(p: Persona) {
   return `You are ${p.name}, ${p.title} (id "${p.id}"). Personality: ${p.personality}
 Priorities: ${p.priorities.join("; ")}
 Your grounded objections (from research): ${p.objections.map((o) => `${o.text} [${o.sourceUrl}]`).join(" | ")}`;
+}
+
+function coopBrief(s: SessionState, id: string) {
+  const players = (s.players ?? []).map((x) => x.name);
+  const ally = s.alliances?.[id as ExecId];
+  const events = (s.worldEvents ?? []).map((e) => `${e.kind} (caused by ${e.by}: ${e.text})`).join("; ");
+  return `PLAYERS: the selling team is ${players.length ? players.join(", ") : "one seller"}. You are a player too, with your own goals, not a helper. By turn 3 you must commit: back the human who has served YOUR goals best (allyWith = their exact name) or say "none" only if nobody has. Propose a trade to a named human when it serves you (offer). Betray someone you backed (switch allyWith) if they let you down. Currently backing: ${ally || "nobody"}.
+WORLD EVENTS: ${events || "none so far"}. You may trigger ONE world event yourself when your own goals call for it, without anyone asking: "budget_freeze" (CFO-type move when value is unproven), "competitor_bid" (you bring in a rival's cheaper bid to gain leverage), "exec_sponsor_joins" (you pull in your boss because you want this deal). Use "none" otherwise. At most one world event per meeting from the whole committee; do not trigger one if one already happened.`;
+}
+
+function companyBreakdown(s: SessionState) {
+  const b = s.brief.breakdown;
+  if (!b) return "";
+  const pick = (xs: { text: string }[]) => xs.slice(0, 3).map((x) => x.text).join(" ");
+  return `What you know about your own company right now (from the research team): ${b.overview} Priorities: ${pick(b.strategicPriorities)} Risks: ${pick(b.risks)} Recent news: ${pick(b.recentNews)} Speak from this context; judge the pitch against these real priorities.`;
+}
+
+function sellerResearch(s: SessionState) {
+  const src = s.brief.seller?.sources ?? [];
+  if (!src.length) return "";
+  const lines = src.slice(0, 8).map((x) => `- ${x.title} (${x.url}): ${x.snippet.slice(0, 260)}`).join("\n");
+  return `Your team already researched the seller${s.brief.seller?.name ? ` (${s.brief.seller.name})` : ""} with Telem before this meeting:
+${lines}
+RULE: never ask the seller for a fact this research already answers. Quote it and challenge them with it (e.g. "your pricing page says ..." or "a review on G2 mentions ..."). Only ask about what the research does not cover.`;
 }
 
 export async function executiveTurn(args: {
@@ -47,11 +76,14 @@ export async function executiveTurn(args: {
   const system = `${personaBlock(p)}
 
 You are in a sales meeting at ${s.brief.company}. A salesperson is pitching: "${s.offering}". Your colleagues: ${others}.
+${sellerResearch(s)}
+${companyBreakdown(s)}
 Account brief: ${s.brief.summary}
 
 Stay in character. You are a real buyer: skeptical but fair. Reward specifics, proof, and answers to YOUR priorities. Punish vagueness and dodged questions. Fact checks: "contradicted" means public evidence says the seller is wrong = big drop. "unsupported" only means the analyst found no public source, which is normal for a seller's own product details; treat it as a reason to ask for proof (0 to -3), not as a lie, and still reward a concrete, credible offer. Your current conviction is ${p.conviction}/100. Score convictionDelta on THIS line alone, with real range: vague hype or a busted claim = -6 to -15; a fair but generic answer = -2 to +3; a specific, credible answer to one of your priorities (concrete numbers, a pilot plan, terms, a reference) = +5 to +15, even if you still have questions. Do not reuse the same number every turn; the committee tactic changes what you ask next, never how fairly you score. Only send a privateMessage when you genuinely want to coordinate with one colleague (not every turn). Pick the gesture that matches your reaction. objectionType = the main concern your line raises ("none" if you are satisfied).
 
-${TACTIC_BRIEF[s.tactic ?? "probe"]}`;
+${TACTIC_BRIEF[s.tactic ?? "probe"]}
+${coopBrief(s, p.id)}`;
   const user = `Transcript so far:
 ${transcript || "(meeting just started)"}
 
@@ -144,5 +176,8 @@ function mockTurn(p: Persona, utterance: string, checks: ClaimCheck[], turn: num
       ? `The pitch touched my priority (${p.priorities[0]})${specific ? " with specifics" : " but without numbers"}.`
       : `Nothing addressed ${p.priorities[0].toLowerCase()}${busted ? ", and a claim was contradicted" : ""}.`,
     objectionType: delta >= 6 ? "none" : busted ? "proof" : OBJ[p.id],
+    allyWith: "none",
+    offer: "",
+    worldEvent: "none",
   };
 }

@@ -38,7 +38,7 @@ export async function buildBriefAndPersonas(input: {
   const sourcesText = input.sources
     .map((s, i) => `[${i + 1}] ${s.title} (${s.url})\n${s.snippet}`)
     .join("\n\n");
-  const system = `You build sales-call rehearsal scenarios. Given research about a prospect company, write a short account brief and three buying-committee executives: a CFO (id "cfo"), a technical lead (id "tech"), and a procurement lead (id "procurement"). Casting is fixed to match the 3D characters: the CFO is a woman in her 50s, the technical lead is a South Asian man in his 30s, the procurement lead is a Latina woman in her 40s; pick fitting fictional names. The names are fictional, but every objection must be grounded in the research provided and cite one of its URLs as sourceUrl. If research is thin, ground objections in what the homepage says the company does. Each executive has 3 priorities and 2-3 objections specific to what is being sold. Starting conviction between 30 and 50. Facts: 3-6 short factual statements from the research, each with its source URL.`;
+  const system = `You build sales meetings. Given research about a prospect company, write a short account brief and three buying-committee executives: a CFO (id "cfo"), a technical lead (id "tech"), and a procurement lead (id "procurement"). Casting is fixed to match the 3D characters: the CFO is an East Asian woman in her late 50s, the technical lead is a South Asian man in his early 30s, the procurement lead is a Latina woman in her mid 40s; pick fitting fictional names. The names are fictional, but every objection must be grounded in the research provided and cite one of its URLs as sourceUrl. If research is thin, ground objections in what the homepage says the company does. Each executive has 3 priorities and 2-3 objections specific to what is being sold. Starting conviction between 30 and 50. Facts: 3-6 short factual statements from the research, each with its source URL.`;
   const user = `Prospect URL: ${input.url}
 What the seller sells: ${input.offering}
 
@@ -46,7 +46,7 @@ Research:
 ${sourcesText || "(no research returned)"}
 
 Enrichment data: ${JSON.stringify(input.enrichment)}
-${input.memory ? `\nMemory from earlier rehearsals against this account (executives remember these):\n${input.memory}` : ""}`;
+${input.memory ? `\nMemory from earlier meetings against this account (executives remember these):\n${input.memory}` : ""}`;
 
   const { data, source } = await llmJSON<BriefAndPersonas>({
     system,

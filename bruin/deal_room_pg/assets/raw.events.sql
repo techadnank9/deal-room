@@ -25,7 +25,7 @@ columns:
     checks:
       - name: not_null
       - name: accepted_values
-        value: [session_started, utterance, claim_check, whisper, conviction_change, thought, speaker_pick, vote, adapt]
+        value: [session_started, utterance, claim_check, whisper, conviction_change, thought, speaker_pick, vote, adapt, alliance, trade, world_event, join]
 @bruin */
 SELECT id, session_id, turn, ts, actor, event_type, text, target, conviction_before, conviction_after, status, source_url
 FROM public.events

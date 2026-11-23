@@ -19,7 +19,7 @@ export default function HowItWorksPage() {
             Deal Room
           </Link>
           <Link href="/new" className="pill-dark text-[14px]">
-            Start a rehearsal
+            Start a meeting
             <span className="arrow" aria-hidden>
               →
             </span>
@@ -29,7 +29,7 @@ export default function HowItWorksPage() {
         <header className="rise mt-14 max-w-[820px] sm:mt-20">
           <p className="text-[13px] font-medium uppercase tracking-[0.14em] text-muted">How it works</p>
           <h1 className="mt-3 text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] sm:text-[56px]">
-            One rehearsal, six sponsor tools, every step in the code.
+            One meeting, six sponsor tools, every step in the code.
           </h1>
           <p className="mt-5 max-w-[640px] text-[17px] leading-relaxed text-muted">
             Telem and Glasser research the account. Claude plays the buying committee. BAND carries their private
@@ -63,7 +63,7 @@ export default function HowItWorksPage() {
 
         <div className="mt-16 flex flex-wrap items-center gap-4">
           <Link href="/new" className="pill-dark text-[14px]">
-            Start a rehearsal
+            Start a meeting
             <span className="arrow" aria-hidden>
               →
             </span>

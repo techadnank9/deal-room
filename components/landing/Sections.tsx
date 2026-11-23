@@ -11,7 +11,7 @@ import {
 } from "./Mocks";
 import { Reveal, TaglineReveal } from "./Reveal";
 
-function Cta({ children = "Rehearse a call" }: { children?: React.ReactNode }) {
+function Cta({ children = "Start a meeting" }: { children?: React.ReactNode }) {
   return (
     <Link
       href="/new"
@@ -39,6 +39,9 @@ export function Nav() {
           <a href="#scorecard" className="hidden rounded-full px-3 py-2 text-muted transition-colors duration-300 hover:text-ink md:inline">
             Scorecard
           </a>
+          <Link href="/deals" className="rounded-full px-3 py-2 text-muted transition-colors duration-300 hover:text-ink">
+            Pipeline
+          </Link>
           <Link href="/history" className="rounded-full px-3 py-2 text-muted transition-colors duration-300 hover:text-ink">
             History
           </Link>
@@ -60,7 +63,7 @@ export function Hero() {
       <div className="mx-auto grid w-full max-w-6xl gap-12 px-6 pb-24 pt-16 md:grid-cols-[1fr_1.05fr] md:items-center md:px-8 md:pt-24">
         <div className="rise">
           <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-line bg-white/70 px-3 py-1 text-sm text-muted">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" /> Sales call rehearsal, by voice
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" /> Humans and AI executives in one room
           </p>
           <h1 className="max-w-[680px] text-5xl font-semibold leading-none tracking-[-0.04em] text-balance md:text-7xl">
             Hear every <span className="text-accent">no</span>
@@ -118,7 +121,7 @@ export function HowItWorks() {
   return (
     <section id="how" className="mx-auto w-full max-w-6xl scroll-mt-24 px-6 py-24 md:px-8">
       <Reveal>
-        <p className="font-mono text-xs uppercase tracking-wider text-muted">How a rehearsal runs</p>
+        <p className="font-mono text-xs uppercase tracking-wider text-muted">How a meeting runs</p>
         <h2 className="mt-3 max-w-[680px] text-4xl font-semibold tracking-tight text-balance md:text-5xl">
           From a URL to a vote in one sitting.
         </h2>
@@ -247,7 +250,7 @@ export function FinalCta() {
           href="/new"
           className="mt-10 inline-flex items-center gap-3 rounded-full bg-white py-2 pl-5 pr-2 text-base font-semibold text-ink transition-transform duration-300 hover:-translate-y-px focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98]"
         >
-          Rehearse a call
+          Start a meeting
           <span className="grid h-8 w-8 place-items-center rounded-full bg-ink text-white" aria-hidden>
             →
           </span>
@@ -266,7 +269,7 @@ export function Footer() {
       <span>Hackathon build. Executives are simulated, sources are real.</span>
       <div className="flex gap-4">
         <Link href="/new" className="hover:text-ink">
-          New rehearsal
+          New meeting
         </Link>
         <Link href="/history" className="hover:text-ink">
           History

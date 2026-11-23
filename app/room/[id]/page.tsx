@@ -42,6 +42,11 @@ export default function RoomPage() {
   const [model, setModel] = useState("");
   const [tactic, setTactic] = useState<{ tactic: string; performance: string; reason: string } | null>(null);
   const [tacticKey, setTacticKey] = useState(0);
+  const [me, setMe] = useState("");
+  const [nameDraft, setNameDraft] = useState("");
+  const [worldEvent, setWorldEvent] = useState<{ kind: string; text: string; by: string } | null>(null);
+  const seqRef = useRef(-1);
+  const busyRef = useRef(false);
   const mutedRef = useRef(false);
   const logKey = useRef(0);
   const turnRef = useRef(0);
@@ -59,27 +64,99 @@ export default function RoomPage() {
     setLog((l) => [...l, ...entries.map((e) => ({ ...e, key: String(logKey.current++) }))]);
   }, []);
 
+  const applySession = useCallback(
+    (session: SessionState, opts: { speakIt?: boolean } = {}) => {
+      setS(session);
+      setTurn(session.turn);
+      setConvictions(Object.fromEntries(session.personas.map((p) => [p.id, p.conviction])));
+      const seq = session.seq ?? 0;
+      if (seq === seqRef.current) return;
+      const first = seqRef.current === -1;
+      seqRef.current = seq;
+      const entries = session.personas.map((p, i) => ({
+        key: `enter-${i}`,
+        turn: 0,
+        actor: p.id,
+        action: "walks in",
+        detail: `${p.name}, ${p.title}`,
+      }));
+      setLog([...entries, ...(session.log ?? [])]);
+      const th = session.tacticHistory?.[session.tacticHistory.length - 1];
+      if (th) setTactic({ tactic: th.tactic, performance: th.performance, reason: th.reason });
+      const lv = session.live;
+      if (lv && !first) {
+        setGestures(lv.gestures as Record<string, Gesture>);
+        setGestureUntil(performance.now() + 2800);
+        setUserTalking(false);
+        setSpeaker(lv.speaker as ExecId);
+        setCaption({ who: lv.speaker, text: lv.line, key: seq });
+        if (lv.whispers.length) {
+          setWhispers(lv.whispers);
+          setTimeout(() => setWhispers([]), 3800);
+        }
+        if (lv.check) {
+          setLastCheck(lv.check);
+          setCheckKey((k) => k + 1);
+        }
+        if (lv.event) {
+          setWorldEvent(lv.event);
+          setTimeout(() => setWorldEvent(null), 9000);
+        }
+        if (opts.speakIt !== false && !mutedRef.current) {
+          const who = lv.speaker;
+          speak(lv.line, who, () => setSpeaker((cur) => (cur === who ? null : cur)));
+        }
+      } else if (lv?.check) setLastCheck(lv.check);
+      if (session.status === "finished" && session.votes) {
+        setVotes(session.votes);
+        setTimeout(() => router.push(`/score/${id}`), 7500);
+      }
+    },
+    [id, router],
+  );
+
+  const refresh = useCallback(async () => {
+    const { session } = await api<{ session: SessionState }>(`/api/session?id=${id}`);
+    applySession(session);
+    return session;
+  }, [id, applySession]);
+
   useEffect(() => {
     if (loaded.current) return;
     loaded.current = true;
+    setMe(localStorage.getItem(`dealroom-player-${id}`) ?? "");
     api<{ session: SessionState }>(`/api/session?id=${id}`)
       .then(({ session }) => {
         if (session.status === "finished") return router.replace(`/score/${id}`);
-        setS(session);
         setModel(session.model ?? "");
-        setTurn(session.turn);
-        setConvictions(Object.fromEntries(session.personas.map((p) => [p.id, p.conviction])));
-        push(
-          session.personas.map((p) => ({
-            turn: 0,
-            actor: p.id,
-            action: `walks in at ${p.conviction}/100`,
-            detail: `${p.name}, ${p.title}`,
-          })),
-        );
+        applySession(session, { speakIt: false });
       })
       .catch((e) => setErr(String(e)));
-  }, [id, push, router]);
+  }, [id, router, applySession]);
+
+  // Shared room: every player polls the same session; agents act on their own when everyone is quiet.
+  useEffect(() => {
+    if (!me) return;
+    const poll = setInterval(() => {
+      if (!busyRef.current) refresh().catch(() => {});
+    }, 2000);
+    const tick = setInterval(() => {
+      if (!busyRef.current) api("/api/tick", { id }).catch(() => {});
+    }, 7000);
+    return () => {
+      clearInterval(poll);
+      clearInterval(tick);
+    };
+  }, [me, id, refresh]);
+
+  async function join(name: string) {
+    const n = name.trim();
+    if (!n) return;
+    await api("/api/join", { id, name: n });
+    localStorage.setItem(`dealroom-player-${id}`, n);
+    setMe(n);
+    refresh().catch(() => {});
+  }
 
   const verdict = useCallback(async () => {
     setBusy(true);
@@ -87,6 +164,7 @@ export default function RoomPage() {
     try {
       const r = await api<{ votes: Vote[] }>("/api/verdict", { id });
       setVotes(r.votes);
+      seqRef.current = -2;
       setSpeaker(null);
       setCaption(null);
       push(
@@ -111,72 +189,18 @@ export default function RoomPage() {
     setErr("");
     setSpeaker(null);
     setUserTalking(true);
-    setCaption({ who: "You", text: utterance, key: Date.now() });
+    setCaption({ who: me || "You", text: utterance, key: Date.now() });
     try {
-      const r = await api<TurnResponse>("/api/turn", { id, text: utterance });
-      setTurn(r.turn);
+      busyRef.current = true;
+      const r = await api<TurnResponse>("/api/turn", { id, text: utterance, player: me });
       setDeltas(Object.fromEntries(Object.entries(r.thoughts).map(([k, t]) => [k, t.delta])));
-      setConvictions(r.convictions);
-      setGestures(r.gestures);
-      setGestureUntil(performance.now() + 2800);
-      setUserTalking(false);
-      setSpeaker(r.speaker);
-      setCaption({ who: r.speaker, text: r.spokenLine, key: Date.now() });
-      if (!mutedRef.current) {
-        const who = r.speaker;
-        speak(r.spokenLine, who, () => setSpeaker((cur) => (cur === who ? null : cur)));
-      }
-      if (r.whisperPairs.length) {
-        setWhispers(r.whisperPairs);
-        setTimeout(() => setWhispers([]), 3800);
-      }
-      if (r.factChecks.length) {
-        setLastCheck(r.factChecks[r.factChecks.length - 1]);
-        setCheckKey((k) => k + 1);
-      }
-      const entries: Omit<LogEntry, "key">[] = [{ turn: r.turn, actor: "user", action: "pitches", detail: utterance }];
-      for (const c of r.factChecks) {
-        entries.push({
-          turn: r.turn,
-          actor: "analyst",
-          action: `fact check: ${c.status}`,
-          tone: c.status === "verified" ? "good" : "bad",
-          detail: c.claim,
-          reason: `${c.note}${c.sourceUrl ? ` (${c.sourceUrl})` : ""}`,
-        });
-      }
-      for (const p of s.personas) {
-        const t = r.thoughts[p.id];
-        entries.push({
-          turn: r.turn,
-          actor: p.id,
-          action: `${t.delta >= 0 ? "+" : ""}${t.delta} → ${r.convictions[p.id]} · ${r.gestures[p.id]}`,
-          tone: t.delta > 0 ? "good" : t.delta < 0 ? "bad" : "neutral",
-          detail: `thinks: ${t.privateThought}`,
-          reason: t.reason,
-        });
-      }
-      for (const w of r.whisperPairs) entries.push({ turn: r.turn, actor: w.from, action: `whispers to ${w.to}`, detail: "hidden", hidden: true });
-      entries.push({ turn: r.turn, actor: "director", action: `floor to ${r.speaker} (urge ${r.thoughts[r.speaker].urge}/10)` });
-      if (r.adaptation) {
-        setTactic(r.adaptation);
-        if (r.adaptation.changed) {
-          setTacticKey((k) => k + 1);
-          entries.push({
-            turn: r.turn,
-            actor: "director",
-            action: `committee adapts: ${r.adaptation.tactic.toUpperCase()}`,
-            tone: r.adaptation.tactic === "close" ? "good" : r.adaptation.tactic === "pressure" ? "bad" : "neutral",
-            detail: `You are ${r.adaptation.performance}. Briefed all three executives over BAND.`,
-            reason: r.adaptation.reason,
-          });
-        }
-      }
-      push(entries);
+      busyRef.current = false;
+      await refresh();
       setText("");
       setBusy(false);
       if (r.done) await verdict();
     } catch (e) {
+      busyRef.current = false;
       setErr(String(e));
       setUserTalking(false);
       setBusy(false);
@@ -194,6 +218,34 @@ export default function RoomPage() {
 
   return (
     <main className="relative h-screen w-full overflow-hidden bg-paper">
+      {!me && (
+        <div className="absolute inset-0 z-50 grid place-items-center bg-paper/80 backdrop-blur">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void join(nameDraft);
+            }}
+            className="card w-[min(440px,90vw)] p-6"
+          >
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Join the selling team</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight">{s.brief.company} is waiting.</h2>
+            <p className="mt-2 text-sm text-muted">
+              Humans and AI executives share this room. Each executive has their own goals: they may back you, trade with you, or turn on you.
+              {s.players?.length ? ` Already here: ${s.players.map((p) => p.name).join(", ")}.` : ""}
+            </p>
+            <input
+              autoFocus
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              placeholder="Your name"
+              className="mt-4 w-full rounded-full border border-line bg-white px-5 py-3 outline-none focus:border-ink"
+            />
+            <button className="pill-dark mt-3">
+              Enter the room <span className="arrow">→</span>
+            </button>
+          </form>
+        </div>
+      )}
       <div className="absolute inset-0">
         <Scene
           execs={s.personas.map((p) => ({
@@ -223,6 +275,25 @@ export default function RoomPage() {
           <span className="text-sm text-muted">
             Turn {turn} of {MAX_TURNS}
           </span>
+          <span className="flex -space-x-1.5">
+            {(s.players ?? []).map((p) => (
+              <span
+                key={p.name}
+                title={p.name}
+                className="grid h-7 w-7 place-items-center rounded-full border-2 border-white text-[11px] font-semibold text-white"
+                style={{ background: p.color }}
+              >
+                {initials(p.name)}
+              </span>
+            ))}
+          </span>
+          <button
+            onClick={() => void navigator.clipboard?.writeText(window.location.href)}
+            className="rounded-full border border-line px-3 py-1 text-xs text-muted hover:text-ink"
+            title="Copy the room link for a teammate"
+          >
+            Invite teammate
+          </button>
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
           <ModelPicker
@@ -291,7 +362,10 @@ export default function RoomPage() {
                       </span>
                     ) : null}
                   </div>
-                  <div className="text-xs text-muted">{EXEC_LABEL[p.id]}</div>
+                  <div className="text-xs text-muted">
+                    {EXEC_LABEL[p.id]}
+                    {s.alliances?.[p.id] ? <span className="ml-1 font-medium text-emerald-700">· backs {s.alliances[p.id]}</span> : null}
+                  </div>
                   <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-black/[0.07]">
                     <div className="h-full rounded-full transition-all duration-700" style={{ width: `${c}%`, background: EXEC_COLOR[p.id] }} />
                   </div>
@@ -326,6 +400,14 @@ export default function RoomPage() {
               <p className="mt-0.5 text-xs text-muted">{lastCheck.note}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* world event caused by an agent */}
+      {worldEvent && !votes && (
+        <div className="card rise absolute left-1/2 top-48 z-20 w-[min(560px,70vw)] -translate-x-1/2 border-2 border-accent px-6 py-4 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-accent">World event · caused by {s.personas.find((p) => p.id === worldEvent.by)?.name ?? worldEvent.by}</p>
+          <p className="mt-1 text-lg font-semibold">{worldEvent.text}</p>
         </div>
       )}
 

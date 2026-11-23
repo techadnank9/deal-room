@@ -32,12 +32,12 @@ export default function HistoryPage() {
             <span className="h-2.5 w-2.5 rounded-full bg-accent" /> Deal Room
           </Link>
           <Link href="/new" className="pill-dark text-sm">
-            New rehearsal <span className="arrow">→</span>
+            New meeting <span className="arrow">→</span>
           </Link>
         </nav>
 
         <header className="mt-12">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Across every rehearsal</p>
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Across every meeting</p>
           <h1 className="mt-2 text-5xl font-semibold tracking-[-0.03em]">Where you keep losing them.</h1>
           <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-line bg-white/70 px-3 py-1 text-xs text-muted">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" /> {t.source}
@@ -46,7 +46,7 @@ export default function HistoryPage() {
 
         <section className="mt-8 grid gap-5 sm:grid-cols-3">
           {[
-            { k: "Rehearsals", v: total },
+            { k: "Meetings", v: total },
             { k: "Deals won", v: `${wins} of ${total}` },
             { k: "Claims that held up", v: `${claimCount("verified")} of ${claimCount("verified") + claimCount("unsupported") + claimCount("contradicted")}` },
           ].map((x) => (
@@ -61,7 +61,7 @@ export default function HistoryPage() {
           <h2 className="font-semibold">Objections that cost you the most conviction</h2>
           <p className="text-sm text-muted">Average conviction change when this objection came up, and how often those calls were lost.</p>
           <div className="mt-5 space-y-4">
-            {t.objections.length === 0 && <p className="text-sm text-muted">No finished rehearsals yet.</p>}
+            {t.objections.length === 0 && <p className="text-sm text-muted">No finished meetings yet.</p>}
             {t.objections.map((o) => {
               const d = Number(o.avg_conviction_delta);
               return (
@@ -81,7 +81,7 @@ export default function HistoryPage() {
         </section>
 
         <section className="mt-5">
-          <h2 className="font-semibold">Rehearsals</h2>
+          <h2 className="font-semibold">Meetings</h2>
           <ul className="mt-3 space-y-2 text-sm">
             {t.sessions.map((s) => (
               <li key={s.session_id}>

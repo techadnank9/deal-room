@@ -76,6 +76,63 @@ export default function BriefPage() {
         Research: {s.brief.researchProvider} · Enrichment: {s.brief.enrichmentProvider} · Agent channel: {s.bandProvider}
       </p>
 
+      {s.brief.steps && (
+        <section className="mt-10">
+          <h2 className="text-lg font-semibold">How we researched {s.brief.company}</h2>
+          <ol className="mt-4 space-y-2">
+            {s.brief.steps.map((st, i) => (
+              <li key={i} className="card flex items-center gap-4 px-4 py-3 text-sm">
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">{i + 1}</span>
+                <span className="flex-1">{st.label}</span>
+                <span className="text-xs text-muted">{st.provider}</span>
+                <span className={`w-28 text-right text-xs font-semibold ${st.found ? "text-emerald-700" : "text-muted"}`}>
+                  {st.found} found · {(st.ms / 1000).toFixed(1)}s
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {s.brief.breakdown && (
+        <section className="mt-10">
+          <h2 className="text-lg font-semibold">Business breakdown</h2>
+          <p className="mt-2 max-w-3xl leading-relaxed text-ink/85">{s.brief.breakdown.overview}</p>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            {(
+              [
+                ["What they sell", s.brief.breakdown.whatTheySell],
+                ["Customers", s.brief.breakdown.customers],
+                ["Business model", s.brief.breakdown.businessModel],
+                ["Funding", s.brief.breakdown.funding],
+                ["Team and hiring", s.brief.breakdown.teamAndHiring],
+                ["Recent news", s.brief.breakdown.recentNews],
+                ["Strategic priorities", s.brief.breakdown.strategicPriorities],
+                ["Risks", s.brief.breakdown.risks],
+                ["Buying triggers", s.brief.breakdown.buyingTriggers],
+                ["How to pitch them", s.brief.breakdown.howToPitch],
+              ] as [string, { text: string; sourceUrl: string }[]][]
+            ).map(([title, items]) => (
+              <div key={title} className={`card p-5 ${title === "How to pitch them" ? "border-2 border-accent/40" : ""}`}>
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted">{title}</p>
+                <ul className="mt-2 space-y-1.5 text-sm">
+                  {items.map((it, i) => (
+                    <li key={i} className="leading-snug">
+                      {it.text}{" "}
+                      {it.sourceUrl && (
+                        <a href={it.sourceUrl} target="_blank" className="text-xs text-muted underline">
+                          source
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <h2 className="mt-12 text-lg font-semibold">The buying committee</h2>
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         {s.personas.map((p) => (

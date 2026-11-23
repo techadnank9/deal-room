@@ -102,13 +102,14 @@ export async function researchAccount(url: string): Promise<{ sources: ResearchS
   const domain = domainOf(url);
   const name = domain.split(".")[0];
   try {
+    const tag = (k: string) => (xs: ResearchSource[]) => xs.map((x) => ({ ...x, kind: k }));
     const [site, news, jobs, money] = await Promise.all([
-      telemFetch([normalizeUrl(url)]).catch(() => [] as ResearchSource[]),
-      telemSearch(`${name} ${domain} news 2026`, 4).catch(() => []),
-      telemSearch(`${name} ${domain} hiring jobs engineering`, 3).catch(() => []),
-      telemSearch(`${name} funding revenue customers`, 3).catch(() => []),
+      telemFetch([normalizeUrl(url)]).then(tag("site")).catch(() => [] as ResearchSource[]),
+      telemSearch(`${name} ${domain} news 2026`, 4).then(tag("news")).catch(() => []),
+      telemSearch(`${name} ${domain} hiring jobs engineering`, 3).then(tag("hiring")).catch(() => []),
+      telemSearch(`${name} funding revenue customers`, 3).then(tag("funding")).catch(() => []),
     ]);
-    const all = [...site, ...news, ...jobs, ...money].filter((s, i, a) => a.findIndex((x) => x.url === s.url) === i).slice(0, 12);
+    const all = [...site, ...jobs, ...money, ...news].filter((s, i, a) => a.findIndex((x) => x.url === s.url) === i).slice(0, 12);
     if (!all.length) throw new Error("telem returned no research");
     return { sources: all, provider: "telem" };
   } catch (err) {
@@ -125,5 +126,38 @@ export async function searchWeb(query: string): Promise<{ sources: ResearchSourc
   } catch (err) {
     console.error("[telem] search failed:", err instanceof Error ? err.message : err);
     return { sources: [], provider: "mock" };
+  }
+}
+
+/**
+ * Research the SELLER (the user's own company/product) so the committee can quote facts
+ * instead of asking for them. With a website: site + pricing, security, integrations, reviews.
+ * Without one: the product category (pricing norms, alternatives) from the one-line offering.
+ */
+export async function researchSeller(sellerUrl: string, offering: string): Promise<{ sources: ResearchSource[]; provider: string; name: string }> {
+  const name = sellerUrl ? domainOf(sellerUrl).split(".")[0] : "";
+  if (!telemEnabled()) {
+    return { sources: sellerUrl ? await fetchHomepage(sellerUrl) : [], provider: sellerUrl ? "fallback:homepage-fetch" : "none", name };
+  }
+  try {
+    const subject = name ? `${name} ${domainOf(sellerUrl)}` : offering;
+    const jobs = sellerUrl
+      ? [
+          telemFetch([normalizeUrl(sellerUrl)]).catch(() => [] as ResearchSource[]),
+          telemSearch(`${subject} pricing plans`, 3).catch(() => []),
+          telemSearch(`${subject} security SOC 2 compliance`, 3).catch(() => []),
+          telemSearch(`${subject} integrations GitHub CI`, 2).catch(() => []),
+          telemSearch(`${subject} reviews customers case study`, 3).catch(() => []),
+        ]
+      : [
+          telemSearch(`${offering} pricing`, 3).catch(() => []),
+          telemSearch(`${offering} alternatives comparison`, 3).catch(() => []),
+          telemSearch(`${offering} ROI case study`, 2).catch(() => []),
+        ];
+    const all = (await Promise.all(jobs)).flat().filter((x, i, a) => a.findIndex((y) => y.url === x.url) === i).slice(0, 12);
+    return { sources: all, provider: "telem", name };
+  } catch (err) {
+    console.error("[telem] seller research failed:", err instanceof Error ? err.message : err);
+    return { sources: [], provider: "error", name };
   }
 }

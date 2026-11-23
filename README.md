@@ -1,6 +1,6 @@
 # Deal Room
 
-Rehearse a sales call against an AI buying committee built from real data about your prospect.
+Sell to an AI buying committee built from real data about your prospect.
 
 Paste a prospect URL and one line about what you sell. Three executives (CFO, tech lead, procurement), grounded in live research on that company, walk into a 3D meeting room. You pitch by voice. They push back with objections that cite sources, an analyst fact-checks every number you say on the wall screen, they message each other privately, and then they vote. Buyers walk over and shake your hand; the others walk out. You get a scorecard with evidence, built by a Bruin pipeline.
 
@@ -67,7 +67,7 @@ Every sponsor module has a mock fallback so the app runs when a key is missing; 
 - **They move and act:** entrance walk, speaker camera, nod / head shake / arms crossed / lean in, whispering pairs lean together, buyers walk over to shake hands, others walk out.
 - **Decision log:** the right-hand panel in the room shows every private thought, conviction change with its reason, fact check, whisper (content hidden until the scorecard), floor decision and vote.
 - **Voices:** push-to-talk speech in (Web Speech API), a different browser voice per executive out (`lib/voice.ts`).
-- **Memory that changes decisions over time:** a new session against an account you rehearsed before loads the earlier votes and failed claims into the personas (`accountMemory` in `app/api/session/route.ts`), and `/history` shows your weakest objection types across sessions from `mart.user_trends`.
+- **Memory that changes decisions over time:** a new session against an account you met before loads the earlier votes and failed claims into the personas (`accountMemory` in `app/api/session/route.ts`), and `/history` shows your weakest objection types across sessions from `mart.user_trends`.
 
 ## Layout
 

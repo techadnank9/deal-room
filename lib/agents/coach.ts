@@ -9,7 +9,7 @@ export async function coachFixes(s: SessionState): Promise<string[]> {
   const { data } = await llmJSON<{ fixes: string[] }>({
     label: "coach",
     system:
-      "You are a blunt sales coach reviewing a rehearsal. Give exactly three fixes. Each fix: one sentence, specific, references what the seller actually said or failed to say, and says what to do instead.",
+      "You are a blunt sales coach reviewing a sales meeting. Give exactly three fixes. Each fix: one sentence, specific, references what the seller actually said or failed to say, and says what to do instead.",
     user: `Selling: ${s.offering} to ${s.brief.company}\n\nTranscript:\n${transcript}\n\nVotes:\n${votes}\n\nFact checks:\n${claims || "none"}`,
     schema: obj({ fixes: arr(str()) }),
     maxTokens: 800,
