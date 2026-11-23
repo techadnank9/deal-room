@@ -52,6 +52,26 @@ export default function BriefPage() {
           ))}
         </ul>
       )}
+      {s.brief.enrichment && (
+        <div className="mt-5 flex flex-wrap gap-2 text-sm">
+          {(
+            [
+              ["Employees", s.brief.enrichment.employees],
+              ["Funding", s.brief.enrichment.funding],
+              ["Revenue", s.brief.enrichment.revenue],
+              ["HQ", s.brief.enrichment.city],
+              ["Founded", s.brief.enrichment.founded],
+              ["Stack", Array.isArray(s.brief.enrichment.techStack) ? (s.brief.enrichment.techStack as string[]).slice(0, 5).join(", ") : undefined],
+            ] as [string, unknown][]
+          )
+            .filter(([, v]) => v && !String(v).includes("mock"))
+            .map(([k, v]) => (
+              <span key={k} className="rounded-full border border-line bg-white px-3 py-1">
+                <span className="text-muted">{k}</span> {String(v)}
+              </span>
+            ))}
+        </div>
+      )}
       <p className="mt-4 text-xs text-muted">
         Research: {s.brief.researchProvider} · Enrichment: {s.brief.enrichmentProvider} · Agent channel: {s.bandProvider}
       </p>

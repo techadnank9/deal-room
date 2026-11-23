@@ -110,7 +110,7 @@ async function generateArt(s: SessionState) {
   const portraitPrompt = (p: SessionState["personas"][number]) =>
     `Professional corporate headshot photo of ${p.name}, ${p.title}, ${p.personality} Neutral warm studio background, natural light, 85mm, realistic skin, business attire.`;
   const [backdrop, ...faces] = await Promise.all([
-    generateImage(backdropPrompt(s.brief.company), 1024, 512),
+    generateImage(backdropPrompt(s.brief.company, (s.brief.enrichment as { city?: string } | undefined)?.city), 1024, 512),
     ...s.personas.map((p) => generateImage(portraitPrompt(p), 512, 640)),
   ]);
   const fresh = await loadSession(s.id);

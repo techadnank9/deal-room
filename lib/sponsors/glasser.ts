@@ -17,6 +17,11 @@ export type Enrichment = {
   likelyTitles?: string[];
   people?: { name?: string; title?: string }[];
   industry?: string;
+  city?: string;
+  revenue?: string;
+  founded?: number;
+  description?: string;
+  latestFunding?: string;
 };
 
 type Run = {
@@ -79,6 +84,11 @@ export async function enrichCompany(domain: string): Promise<{ data: Enrichment;
     data.employees = o.employees ? String(o.employees) : min || max ? `${min ?? "?"}-${max ?? "?"}` : undefined;
     data.funding = fmtUsd(o.total_funding_usd);
     if (typeof o.industry === "string") data.industry = o.industry;
+    if (o.city) data.city = [o.city, o.region, o.country].filter(Boolean).join(", ");
+    data.revenue = fmtUsd(o.revenue_usd);
+    if (o.founded_year) data.founded = Number(o.founded_year);
+    if (typeof o.description === "string") data.description = o.description.slice(0, 600);
+    if (o.latest_funding_date) data.latestFunding = String(o.latest_funding_date);
   }
   if (tech.status === "fulfilled" && tech.value) {
     const items = ((tech.value as { items?: { name?: string }[] }).items ?? []).map((x) => x.name).filter(Boolean) as string[];
