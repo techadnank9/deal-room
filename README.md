@@ -57,17 +57,26 @@ See the interactive version at `/how-it-works`.
 | **Telem** | Account research at session start (`/v1/fetch` on the prospect site, `/v1/search` for news, hiring, funding/customers) and live web search for each claim the analyst checks. | `lib/sponsors/telem.ts`, `lib/agents/claims.ts` |
 | **Glasser** | Company enrichment (employees, funding via `enrich`; `tech_stack`) and `people_search` for real titles at the prospect, fed into persona generation. | `lib/sponsors/glasser.ts`, `app/api/session/route.ts` |
 | **Runware** | Generated executive portraits (brief and scorecard cards) and the window backdrop in the 3D room. | `lib/sponsors/runware.ts`, `app/api/session/route.ts`, `app/api/image/route.ts` |
+| **ElevenLabs** | A distinct voice per executive (`/api/tts`). | `app/api/tts/route.ts`, `lib/voice.ts` |
 | **Claude** (Anthropic SDK) | Personas, claim extraction, analyst judgement, three executives per turn in parallel, votes, coaching. Model from `LLM_MODEL` (default `claude-haiku-5-5`), structured outputs. With only `OPENAI_API_KEY` set, the same calls run on OpenAI (`OPENAI_MODEL`) with strict JSON schema outputs. | `lib/llm.ts`, `lib/agents/*` |
 
 Every sponsor module has a mock fallback so the app runs when a key is missing; the provider actually used is recorded in the `session_started` event and shown on the brief page.
 
-## Hackathon requirements
+## Hackathon track: Co-op Multiplayer Game
 
-- **3+ agents as visible 3D characters with their own goals:** CFO, tech lead, procurement (plus the analyst), rigged characters generated with Meshy, in a React Three Fiber room (`components/room/`). Personas have their own priorities, objections and conviction.
-- **They move and act:** entrance walk, speaker camera, nod / head shake / arms crossed / lean in, whispering pairs lean together, buyers walk over to shake hands, others walk out.
-- **Decision log:** the right-hand panel in the room shows every private thought, conviction change with its reason, fact check, whisper (content hidden until the scorecard), floor decision and vote.
-- **Voices:** push-to-talk speech in (Web Speech API), a different browser voice per executive out (`lib/voice.ts`).
-- **Memory that changes decisions over time:** a new session against an account you met before loads the earlier votes and failed claims into the personas (`accountMemory` in `app/api/session/route.ts`), and `/history` shows your weakest objection types across sessions from `mart.user_trends`.
+Humans and AI agents share one deal room as equal players.
+
+- **2+ human players and 3+ agent players in one visual world.** Humans join the same 3D room by link and name ("Invite teammate"); the CFO, tech lead, procurement lead and analyst are rigged 3D characters (Meshy) in a React Three Fiber room. Every player sees the same live room via shared session state (`app/room/[id]/page.tsx`, `app/api/join`).
+- **Agents act independently with their own goals and memory.** Each executive has priorities, objections grounded in Telem/Glasser research, a conviction score, private BAND messages, and memory of earlier meetings with the same account. When the humans go quiet for 25 s, the agents take a round on their own (`app/api/tick`, `lib/agents/round.ts`).
+- **Ally, trade, compete, betray.** Each agent tracks which human's lines actually moved it and backs that player (alliance); it can propose trades ("give us month-to-month and I'll back you") and switch sides later (betrayal). All logged as events and in the decision log.
+- **A major world event caused by agents alone.** An agent can trigger one of budget freeze, competitor bid, or executive sponsor joining, by its own choice or by its goal rules (CFO freezes budget when its conviction collapses; procurement brings a rival bid when price is unresolved). Shown room-wide.
+- **Decision log, voices, scorecard.** Every thought, conviction change and reason, fact check, whisper (revealed on the scorecard), alliance, trade, world event and vote. Executives speak with ElevenLabs voices; humans speak with push-to-talk. The scorecard and history come from the Bruin pipeline.
+
+## What else is in the product
+
+- **Step-by-step account research** (`/brief/[id]`): Telem reads the prospect's site and searches news, hiring and funding; Glasser adds size, funding, tech stack and people; Telem also researches the seller's own company; an analyst agent writes a sourced business breakdown (what they sell, customers, model, funding, team, news, priorities, risks, buying triggers, how to pitch). The executives speak from it.
+- **Pipeline** (`/deals`): every account with stage, risk, committee conviction, who backs whom, and a qualification strip.
+- **Any model, any time**: choose the model per meeting or switch mid-meeting (OpenAI or Claude, by model name).
 
 ## Layout
 
