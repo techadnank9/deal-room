@@ -50,3 +50,4 @@ __pycache__/
 /bruin/logs
 !.env.example
 /bin
+/public/models/backup-v1
