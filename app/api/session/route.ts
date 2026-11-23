@@ -5,7 +5,9 @@ import { domainOf, researchAccount } from "@/lib/sponsors/telem";
 import { enrichCompany } from "@/lib/sponsors/glasser";
 import { openRoom } from "@/lib/sponsors/band";
 import { backdropPrompt, generateImage, runwareEnabled } from "@/lib/sponsors/runware";
-import type { SessionState } from "@/lib/types";
+import type { ResearchSource, SessionState } from "@/lib/types";
+import { readCache, writeCache } from "@/lib/cache";
+import type { Enrichment } from "@/lib/sponsors/glasser";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,11 +33,19 @@ export async function POST(req: Request) {
   const id = randomUUID().slice(0, 8);
   const domain = domainOf(url);
 
-  const [research, enrichment, memory] = await Promise.all([
-    researchAccount(url),
-    enrichCompany(domain),
-    accountMemory(domain),
-  ]);
+  let [research, enrichment] = await Promise.all([researchAccount(url), enrichCompany(domain)]);
+  const memory = await accountMemory(domain);
+  // Offline fallback: reuse the last real research for this domain when a sponsor call failed.
+  if (research.provider === "telem") writeCache("research", domain, research);
+  else {
+    const cached = readCache<{ sources: ResearchSource[]; provider: string }>("research", domain);
+    if (cached) research = { sources: cached.sources, provider: `cache:${cached.provider}` };
+  }
+  if (enrichment.provider === "glasser") writeCache("enrichment", domain, enrichment);
+  else {
+    const cached = readCache<{ data: Enrichment; provider: string }>("enrichment", domain);
+    if (cached) enrichment = { data: cached.data, provider: `cache:${cached.provider}` };
+  }
 
   const { brief, personas, source } = await buildBriefAndPersonas({
     url,
