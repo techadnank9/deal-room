@@ -143,9 +143,9 @@ function Backdrop({ url }: { url: string }) {
   return <meshBasicMaterial map={tex} toneMapped={false} />;
 }
 
-function MarbleMaterial() {
-  const tex = useTexture("/backdrops/table-marble.jpg");
-  return <meshStandardMaterial map={tex} roughness={0.18} metalness={0.05} />;
+function TopMaterial() {
+  const tex = useTexture("/backdrops/table-rosewood.jpg");
+  return <meshStandardMaterial map={tex} color="#3a1c14" roughness={0.35} metalness={0} />;
 }
 
 function Room({
@@ -262,32 +262,43 @@ function Room({
       <group position={[0, 0, -0.75]}>
         {panorama ? (
           <>
-            {/* marble slab (Runware-generated texture) on brass panel legs */}
+            {/* glossy rosewood top (Runware texture) with a neon edge glow on black legs */}
             <mesh position={[0, 1.04, 0]} castShadow receiveShadow>
               <boxGeometry args={[3.0, 0.08, 1.1]} />
               <Suspense
                 fallback={
-                  <meshStandardMaterial color="#efece6" roughness={0.25} />
+                  <meshStandardMaterial color="#3a1712" roughness={0.15} />
                 }
               >
-                <MarbleMaterial />
+                <TopMaterial />
               </Suspense>
             </mesh>
-            <mesh position={[0, 0.985, 0]}>
-              <boxGeometry args={[2.9, 0.03, 1.0]} />
-              <meshStandardMaterial
-                color="#b8913f"
-                metalness={0.9}
-                roughness={0.25}
-              />
-            </mesh>
+            {/* neon strip: pink along the front and back, teal on the ends */}
+            {[0.56, -0.56].map((z) => (
+              <mesh key={z} position={[0, 0.99, z]}>
+                <boxGeometry args={[2.96, 0.025, 0.025]} />
+                <meshBasicMaterial color="#ff3fa4" toneMapped={false} />
+              </mesh>
+            ))}
+            {[1.51, -1.51].map((x) => (
+              <mesh key={x} position={[x, 0.99, 0]}>
+                <boxGeometry args={[0.025, 0.025, 1.1]} />
+                <meshBasicMaterial color="#21e6e0" toneMapped={false} />
+              </mesh>
+            ))}
+            <pointLight
+              position={[0, 0.7, 0.9]}
+              color="#ff3fa4"
+              intensity={1.6}
+              distance={3.2}
+            />
             {[-1.15, 1.15].map((x) => (
               <mesh key={x} position={[x, 0.49, 0]} castShadow>
                 <boxGeometry args={[0.07, 0.98, 0.8]} />
                 <meshStandardMaterial
-                  color="#b8913f"
-                  metalness={0.9}
-                  roughness={0.25}
+                  color="#111"
+                  metalness={0.7}
+                  roughness={0.2}
                 />
               </mesh>
             ))}
