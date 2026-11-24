@@ -69,17 +69,44 @@ export default function TeamRoom() {
   const approachAt = useRef(0);
   const backTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Your company decides which team room you are in: the URL you just entered wins, otherwise the one this browser used last.
+  const companyRef = useRef("");
+  const [company, setCompanyState] = useState("");
+  const setCompany = useCallback((c: string) => {
+    companyRef.current = c;
+    setCompanyState(c);
+    if (c) localStorage.setItem("dealroom-company", c);
+    else localStorage.removeItem("dealroom-company");
+  }, []);
+
   useEffect(() => {
     lastTalk.current = Date.now();
-    api<TeamState>("/api/team").then((t) => {
+    const fromUrl = new URLSearchParams(window.location.search).get("url")?.trim() ?? "";
+    const c = fromUrl || localStorage.getItem("dealroom-company") || "";
+    companyRef.current = c;
+    const name = localStorage.getItem("dealroom-me") ?? "";
+    api<TeamState>(`/api/team${c ? `?url=${encodeURIComponent(c)}` : ""}`).then((t) => {
       setState(t);
       setOffering(t.offering);
+      // You came from the landing page with a new company: start the team on it straight away.
+      if (fromUrl && name && !t.url) void setupRef.current(fromUrl, name);
     });
-    /* eslint-disable react-hooks/set-state-in-effect -- read saved name and ?url once on mount */
+    /* eslint-disable react-hooks/set-state-in-effect -- read saved name, company and ?url once on mount */
+    setCompanyState(c);
     setMe(localStorage.getItem("dealroom-me") ?? "");
-    setPrefillUrl(new URLSearchParams(window.location.search).get("url") ?? "");
+    setPrefillUrl(c);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
+
+  function changeCompany() {
+    stopSpeaking();
+    setCompany("");
+    setPrefillUrl("");
+    setScreen(null);
+    setState({ offering: "", leads: [], chat: [] });
+    setOffering("");
+    window.history.replaceState(null, "", "/team");
+  }
 
   // The teammate you call walks over to you, then answers; afterwards they go back to the table.
   const callOver = useCallback((who: string) => {
@@ -132,7 +159,7 @@ export default function TeamRoom() {
             : { who: "cfo", task: "searching the web with Telem and enriching with Glasser" },
       );
       try {
-        const r = await api<Reply>("/api/team", { text: said, player: me || "there", offering });
+        const r = await api<Reply>("/api/team", { url: companyRef.current, text: said, player: me || "there", offering });
         setState(r.state);
         if (r.found?.length) {
           setFresh(r.found.map((l) => l.id));
@@ -157,8 +184,13 @@ export default function TeamRoom() {
     [me, offering, state, answer, callOver],
   );
 
+  const setupRef = useRef<(url: string, name: string) => Promise<void>>(async () => {});
+  useEffect(() => {
+    setupRef.current = setup;
+  });
   async function setup(url: string, name: string) {
     setSettingUp(url.replace(/^https?:\/\/(www\.)?/, ""));
+    setCompany(url);
     busyRef.current = true;
     setBusy(true);
     try {
@@ -211,7 +243,7 @@ export default function TeamRoom() {
     stopSpeaking();
     callOver("procurement");
     try {
-      const r = await api<Reply>("/api/team", { book: l.id, player: me || "You" });
+      const r = await api<Reply>("/api/team", { url: companyRef.current, book: l.id, player: me || "You" });
       setState(r.state);
       setOpen(l.id);
       if (myReq === userReq.current) answer(r.speaker, r.line);
@@ -227,7 +259,7 @@ export default function TeamRoom() {
   async function notBuyer(l: Lead) {
     setState((st) => (st ? { ...st, leads: st.leads.filter((x) => x.id !== l.id) } : st));
     if (screen?.to === l.company) setScreen(null);
-    const r = await api<{ state: TeamState }>("/api/team", { remove: l.id });
+    const r = await api<{ state: TeamState }>("/api/team", { url: companyRef.current, remove: l.id });
     setState(r.state);
   }
 
@@ -305,7 +337,10 @@ export default function TeamRoom() {
           <span className="max-w-[420px] truncate text-sm text-muted">{state.company ? `${state.company} · ` : ""}{state.icp ? `selling to ${state.icp}` : offering}</span>
         </div>
         <div className="pointer-events-auto flex gap-2">
-          <Link href="/crm" target="_blank" className="card px-4 py-2.5 text-sm">
+          <button onClick={changeCompany} className="card px-4 py-2.5 text-sm">
+            Change company
+          </button>
+          <Link href={`/crm${company ? `?url=${encodeURIComponent(company)}` : ""}`} target="_blank" className="card px-4 py-2.5 text-sm">
             Open CRM ↗
           </Link>
         </div>

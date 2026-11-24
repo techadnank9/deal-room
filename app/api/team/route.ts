@@ -1,16 +1,23 @@
-import { bookMeeting, loadTeam, removeLead, pruneCompetitors, teamSetup, teamTurn } from "@/lib/agents/team";
+import { bookMeeting, loadTeam, removeLead, pruneCompetitors, teamSetup, teamTurn, withCompany } from "@/lib/agents/team";
 import { writeEvents } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  return Response.json(await loadTeam());
+// ?url= / body.url names your company: each company has its own team room.
+export async function GET(req: Request) {
+  const url = new URL(req.url).searchParams.get("url") ?? undefined;
+  return Response.json(await withCompany(url, loadTeam));
 }
 
 /** Talk to your team. The right teammate answers and does the work. */
 export async function POST(req: Request) {
-  const { text, player, offering, setupUrl, prune, book, remove } = (await req.json()) as { text?: string; player?: string; offering?: string; setupUrl?: string; prune?: boolean; book?: string; remove?: string };
+  const body = (await req.json()) as { url?: string; setupUrl?: string };
+  return withCompany(body.setupUrl || body.url, () => handle(body));
+}
+
+async function handle(body: unknown) {
+  const { text, player, offering, setupUrl, prune, book, remove } = body as { text?: string; player?: string; offering?: string; setupUrl?: string; prune?: boolean; book?: string; remove?: string };
   if (prune) return Response.json({ removed: await pruneCompetitors(), state: await loadTeam() });
   if (remove) return Response.json({ state: await removeLead(remove) });
   if (book) return Response.json(await bookMeeting(book, (player || "You").trim()));

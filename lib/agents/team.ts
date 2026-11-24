@@ -1,9 +1,9 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { arr, enm, llmJSON, obj, str } from "../llm";
 import { kvGet, kvSet } from "../db";
 import { researchSeller, searchWeb } from "../sponsors/telem";
 import { enrichCompany } from "../sponsors/glasser";
-import { buildPipeline } from "../pipeline";
 
 // Your AI sales team. Model ids map to the 3D characters (cfo/tech/procurement GLBs) and ElevenLabs voices.
 export const TEAM = [
@@ -54,9 +54,18 @@ export type TeamState = {
   excluded?: string[];
 };
 
-const KEY = "team-state";
+// Every company gets its own room: requests run inside withCompany(domain), and load/save use that company's key.
+const companyScope = new AsyncLocalStorage<string>();
+export function withCompany<T>(urlOrDomain: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const d = urlOrDomain?.trim() ? domainOf(urlOrDomain.trim()).toLowerCase() : "";
+  return d ? companyScope.run(d, fn) : fn();
+}
+function key() {
+  const d = companyScope.getStore();
+  return d ? `team-state:${d}` : "team-state:none";
+}
 export async function loadTeam(): Promise<TeamState> {
-  const t = (await kvGet<TeamState>(KEY)) ?? { offering: "", leads: [], chat: [] };
+  const t = (await kvGet<TeamState>(key())) ?? { offering: "", leads: [], chat: [] };
   for (const l of t.leads) {
     if (l.email) l.email = { subject: clean(l.email.subject, t), body: clean(l.email.body, t) };
     if (l.meeting) l.meeting = { ...l.meeting, subject: clean(l.meeting.subject, t), invite: clean(l.meeting.invite, t) };
@@ -77,7 +86,7 @@ const RANK = { new: 0, contacted: 1, meeting: 2 } as const;
  * merge with what is stored now. `replace` is for setup and pruning, where dropping leads is the point.
  */
 async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
-  const cur = opts.replace ? null : await kvGet<TeamState>(KEY);
+  const cur = opts.replace ? null : await kvGet<TeamState>(key());
   if (cur && cur.url === t.url) {
     const mine = new Map(t.leads.map((l) => [l.id, l]));
     for (const old of cur.leads) {
@@ -96,7 +105,7 @@ async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
     t.leads.sort((x, y) => y.at.localeCompare(x.at));
   }
   t.chat = t.chat.slice(-60);
-  await kvSet(KEY, t);
+  await kvSet(key(), t);
 }
 
 function domainOf(u: string) {
@@ -388,15 +397,15 @@ export async function teamTurn(
       line = data.say;
     }
   } else {
-    const { deals } = await buildPipeline();
+    const meetings = t.leads.filter((l) => l.meeting);
     const { data } = await llmJSON<{ say: string }>({
       label: "team-chat",
       maxTokens: 400,
       system: `You are ${me.name}, ${me.role} on ${player}'s sales team (${me.does}). Answer in 1-3 natural spoken sentences, using only the facts given. If useful, suggest which teammate to ask next (Maya finds leads, Arjun writes emails, Elena tracks the pipeline and books meetings).${ACT}`,
-      user: `We sell: ${t.offering || "(not said yet)"}\nLeads: ${t.leads.map((l) => `${l.company} (${l.status})`).join(", ") || "none"}\nDeals in meetings: ${deals.map((d) => `${d.company} ${d.stage} risk ${d.risk}`).join("; ") || "none"}\nSeller says: "${text}"`,
+      user: `We sell: ${t.offering || "(not said yet)"}\nLeads: ${t.leads.map((l) => `${l.company} (${l.status})`).join(", ") || "none"}\nMeetings booked: ${meetings.map((l) => `${l.company} ${l.meeting!.when}`).join("; ") || "none"}\nSeller says: "${text}"`,
       schema: obj({ say: str() }),
       mock: () => ({
-        say: `${player}, we have ${t.leads.length} leads and ${deals.length} deals in meetings.`,
+        say: `${player}, we have ${t.leads.length} leads and ${meetings.length} meetings booked.`,
       }),
     });
     line = data.say;
@@ -412,6 +421,7 @@ export async function teamSetup(
   url: string,
   player: string,
 ): Promise<TeamReply> {
+  url = await resolveCompanyUrl(url);
   const research = await researchSeller(url, "");
   const domain = domainOf(url);
   const { data } = await llmJSON<{
@@ -450,8 +460,8 @@ export async function teamSetup(
     chat: [],
   };
   const prev = await loadTeam();
-  if (prev.url === url) {
-    t.leads = prev.leads; // same company: keep its leads and what you rejected
+  if (prev.url) {
+    t.leads = prev.leads; // same company again: keep its leads and what you rejected
     t.excluded = prev.excluded;
   }
   t.chat.push({ who: "cfo", text: data.say, at: new Date().toISOString() });
@@ -499,4 +509,15 @@ export async function removeLead(leadId: string): Promise<TeamState> {
   t.excluded = [...new Set([...(t.excluded ?? []), lead.company])].slice(-100);
   await saveTeam(t, { replace: true });
   return t;
+}
+
+/** Accept whatever you type: a full URL, a bare domain, or just a company name ("lingcode"); a name is looked up with Telem. */
+export async function resolveCompanyUrl(input: string): Promise<string> {
+  const raw = input.trim();
+  if (/\.[a-z]{2,}/i.test(raw)) return raw;
+  const { sources } = await searchWeb(`${raw} company official website`).catch(() => ({ sources: [] as { url: string; title: string }[] }));
+  const skip = /(linkedin|crunchbase|twitter|x\.com|facebook|youtube|wikipedia|github|medium|reddit|g2|capterra|producthunt)\./i;
+  const name = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const hit = sources.map((x) => domainOf(x.url)).find((d) => !skip.test(d) && d.replace(/[^a-z0-9]/g, "").includes(name)) ?? sources.map((x) => domainOf(x.url)).find((d) => !skip.test(d));
+  return hit ?? `${raw}.com`;
 }

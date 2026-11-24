@@ -27,7 +27,8 @@ export default function Crm() {
   useEffect(() => {
     let stop = false;
     async function load() {
-      const r = await fetch("/api/team", { cache: "no-store" });
+      const c = new URLSearchParams(window.location.search).get("url") || localStorage.getItem("dealroom-company") || "";
+      const r = await fetch(`/api/team${c ? `?url=${encodeURIComponent(c)}` : ""}`, { cache: "no-store" });
       if (!r.ok || stop) return;
       const next = (await r.json()) as TeamState;
       const sig: Record<string, string> = {};
