@@ -29,12 +29,15 @@ function voiceFor(agent: string): SpeechSynthesisVoice | undefined {
 }
 
 let currentAudio: HTMLAudioElement | null = null;
+// Only the newest line may play: a reply whose audio arrives after a newer one started is dropped.
+let generation = 0;
 let ttsAvailable: boolean | null = null; // null = unknown, try once
 
 /** Speak with ElevenLabs (via /api/tts); fall back to the browser voice. */
 export function speak(text: string, agent: string, onEnd?: () => void) {
   if (typeof window === "undefined") return onEnd?.();
   stopSpeaking();
+  const mine = generation;
   if (ttsAvailable === false) return speakBrowser(text, agent, onEnd);
   let done = false;
   const finish = () => {
@@ -47,7 +50,9 @@ export function speak(text: string, agent: string, onEnd?: () => void) {
       if (res.status === 503) ttsAvailable = false;
       if (!res.ok) throw new Error(`tts ${res.status}`);
       ttsAvailable = true;
-      const url = URL.createObjectURL(await res.blob());
+      const blob = await res.blob();
+      if (mine !== generation) return finish(); // someone newer is talking
+      const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       currentAudio = audio;
       audio.onended = () => {
@@ -58,7 +63,8 @@ export function speak(text: string, agent: string, onEnd?: () => void) {
       await audio.play();
     })
     .catch(() => {
-      if (!done) speakBrowser(text, agent, finish);
+      if (!done && mine === generation) speakBrowser(text, agent, finish);
+      else finish();
     });
 }
 
@@ -89,6 +95,7 @@ function speakBrowser(text: string, agent: string, onEnd?: () => void) {
 
 export function stopSpeaking() {
   if (typeof window === "undefined") return;
+  generation++;
   window.speechSynthesis?.cancel();
   if (currentAudio) {
     currentAudio.pause();

@@ -50,6 +50,8 @@ export type TeamState = {
   queries?: string[];
   leads: Lead[];
   chat: { who: string; text: string; at: string }[];
+  /** Companies the seller marked "not a buyer" (competitors, wrong fit). Maya never suggests them again. */
+  excluded?: string[];
 };
 
 const KEY = "team-state";
@@ -69,7 +71,30 @@ function clean(text: string, t: Pick<TeamState, "company">) {
     .replace(/\s*\[[^\]\n]{1,40}\]/g, "")
     .replace(/ from ,/g, ",");
 }
-async function saveTeam(t: TeamState) {
+const RANK = { new: 0, contacted: 1, meeting: 2 } as const;
+/**
+ * Save without losing work from requests that ran at the same time (you talking while a teammate works):
+ * merge with what is stored now. `replace` is for setup and pruning, where dropping leads is the point.
+ */
+async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
+  const cur = opts.replace ? null : await kvGet<TeamState>(KEY);
+  if (cur && cur.url === t.url) {
+    const mine = new Map(t.leads.map((l) => [l.id, l]));
+    for (const old of cur.leads) {
+      const l = mine.get(old.id);
+      if (!l) {
+        t.leads.push(old);
+        continue;
+      }
+      l.email ??= old.email;
+      l.meeting ??= old.meeting;
+      if (RANK[old.status] > RANK[l.status]) l.status = old.status;
+    }
+    const seen = new Set(t.chat.map((c) => `${c.at}|${c.who}|${c.text}`));
+    t.chat.push(...cur.chat.filter((c) => !seen.has(`${c.at}|${c.who}|${c.text}`)));
+    t.chat.sort((x, y) => x.at.localeCompare(y.at));
+    t.leads.sort((x, y) => y.at.localeCompare(x.at));
+  }
   t.chat = t.chat.slice(-60);
   await kvSet(KEY, t);
 }
@@ -250,8 +275,8 @@ export async function teamTurn(
       }>({
         label: "team-leads",
         maxTokens: 1500,
-        system: `You are ${me.name}, lead researcher on a sales team. From the search results, pick up to 5 REAL companies that would BUY what we sell (they have the problem we solve). NEVER pick our own company, and NEVER pick competitors or vendors that sell the same kind of product as us; skip media sites, directories, review sites and agencies. domain = the company's own website domain. why = one specific reason from the results. sourceUrl = the result URL it came from. Skip companies already in the lead list. say = 1-2 natural spoken sentences to the seller (first name ${player}) about the buyers you found (do not mention competitors).${ACT}`,
-        user: `Our company: ${t.company ?? "?"} (${t.url ?? ""})\nWe sell: ${t.offering || "(unknown)"}\nIdeal customer: ${t.icp ?? "unknown"}\nAlready have: ${leadNames}\nSearch results (Telem):\n${sources.map((x, i) => `[${i + 1}] ${x.title} ${x.url}\n${x.snippet.slice(0, 400)}`).join("\n\n") || "(none)"}`,
+        system: `You are ${me.name}, lead researcher on a sales team. From the search results, pick up to 5 REAL companies that would BUY what we sell (they have the problem we solve). NEVER pick our own company, and NEVER pick competitors or vendors that sell the same kind of product as us; skip media sites, directories, review sites and agencies. domain = the company's own website domain. why = one specific reason from the results. sourceUrl = the result URL it came from. Skip companies already in the lead list. The seller has rejected some companies as competitors or not buyers: never pick those, and never pick companies of the same kind as them. say = 1-2 natural spoken sentences to the seller (first name ${player}) about the buyers you found (do not mention competitors).${ACT}`,
+        user: `Our company: ${t.company ?? "?"} (${t.url ?? ""})\nWe sell: ${t.offering || "(unknown)"}\nIdeal customer: ${t.icp ?? "unknown"}\nAlready have: ${leadNames}\nRejected by the seller (competitors / not buyers): ${(t.excluded ?? []).join(", ") || "none"}\nSearch results (Telem):\n${sources.map((x, i) => `[${i + 1}] ${x.title} ${x.url}\n${x.snippet.slice(0, 400)}`).join("\n\n") || "(none)"}`,
         schema: obj({
           leads: arr(
             obj({
@@ -274,7 +299,9 @@ export async function teamTurn(
         }),
       }));
       const ours = (t.url ? domainOf(t.url) : "").split(".")[0];
+      const rejected = new Set((t.excluded ?? []).map((x) => x.toLowerCase()));
       fresh = data.leads
+        .filter((l) => !rejected.has(l.company.toLowerCase()))
         .filter((l) => !l.sellsSameKindOfProduct)
         .filter(
           (l) =>
@@ -423,9 +450,12 @@ export async function teamSetup(
     chat: [],
   };
   const prev = await loadTeam();
-  if (prev.url === url) t.leads = prev.leads; // same company: keep its leads
+  if (prev.url === url) {
+    t.leads = prev.leads; // same company: keep its leads and what you rejected
+    t.excluded = prev.excluded;
+  }
   t.chat.push({ who: "cfo", text: data.say, at: new Date().toISOString() });
-  await saveTeam(t);
+  await saveTeam(t, { replace: true });
   await pruneCompetitors();
   const hunt = await teamTurn(
     `Maya, find leads that match our ideal customer: ${data.icp}`,
@@ -456,6 +486,17 @@ export async function pruneCompetitors(): Promise<string[]> {
     )
     .map((l) => l.company);
   t.leads = t.leads.filter((l) => !removed.includes(l.company));
-  await saveTeam(t);
+  await saveTeam(t, { replace: true });
   return removed;
+}
+
+/** The seller says a lead is not a buyer (a competitor, or wrong fit): drop it and never suggest it again. */
+export async function removeLead(leadId: string): Promise<TeamState> {
+  const t = await loadTeam();
+  const lead = t.leads.find((l) => l.id === leadId);
+  if (!lead) return t;
+  t.leads = t.leads.filter((l) => l.id !== leadId);
+  t.excluded = [...new Set([...(t.excluded ?? []), lead.company])].slice(-100);
+  await saveTeam(t, { replace: true });
+  return t;
 }
