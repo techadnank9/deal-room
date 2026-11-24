@@ -9,7 +9,11 @@ import type { Gesture } from "@/lib/types";
 
 const Scene = dynamic(() => import("@/components/room/Scene"), {
   ssr: false,
-  loading: () => <div className="flex h-full items-center justify-center text-muted">Setting up your team room…</div>,
+  loading: () => (
+    <div className="flex h-full items-center justify-center text-muted">
+      Setting up your team room…
+    </div>
+  ),
 });
 
 const TEAM = [
@@ -32,8 +36,22 @@ type Lead = {
   foundBy: string;
   at: string;
 };
-type TeamState = { offering: string; company?: string; url?: string; icp?: string; leads: Lead[]; chat: { who: string; text: string; at: string }[] };
-type Reply = { speaker: string; line: string; found?: Lead[]; email?: Lead; meeting?: Lead; state: TeamState };
+type TeamState = {
+  offering: string;
+  company?: string;
+  url?: string;
+  icp?: string;
+  leads: Lead[];
+  chat: { who: string; text: string; at: string }[];
+};
+type Reply = {
+  speaker: string;
+  line: string;
+  found?: Lead[];
+  email?: Lead;
+  meeting?: Lead;
+  state: TeamState;
+};
 
 const STATUS_STYLE: Record<string, string> = {
   new: "bg-sky-100 text-sky-800",
@@ -46,7 +64,9 @@ export default function TeamRoom() {
   const [me, setMe] = useState("");
   const [offering, setOffering] = useState("");
   const [speaker, setSpeaker] = useState<string | null>(null);
-  const [caption, setCaption] = useState<{ who: string; text: string } | null>(null);
+  const [caption, setCaption] = useState<{ who: string; text: string } | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
   const [typing, setTyping] = useState(false);
@@ -56,8 +76,16 @@ export default function TeamRoom() {
   const [gestures, setGestures] = useState<Record<string, Gesture>>({});
   const [gestureUntil, setGestureUntil] = useState(0);
   const [settingUp, setSettingUp] = useState<string | null>(null);
-  const [working, setWorking] = useState<{ who: string; task: string } | null>(null);
-  const [screen, setScreen] = useState<{ who: string; to: string; subject: string; body: string; shown: number } | null>(null);
+  const [working, setWorking] = useState<{ who: string; task: string } | null>(
+    null,
+  );
+  const [screen, setScreen] = useState<{
+    who: string;
+    to: string;
+    subject: string;
+    body: string;
+    shown: number;
+  } | null>(null);
   const [prefillUrl, setPrefillUrl] = useState("");
   const [mini, setMini] = useState(false);
   const [booking, setBooking] = useState<string | null>(null);
@@ -81,16 +109,29 @@ export default function TeamRoom() {
 
   useEffect(() => {
     lastTalk.current = Date.now();
-    const fromUrl = new URLSearchParams(window.location.search).get("url")?.trim() ?? "";
+    const fromUrl =
+      new URLSearchParams(window.location.search).get("url")?.trim() ?? "";
     const c = fromUrl || localStorage.getItem("dealroom-company") || "";
     companyRef.current = c;
     const name = localStorage.getItem("dealroom-me") ?? "";
-    api<TeamState>(`/api/team${c ? `?url=${encodeURIComponent(c)}` : ""}`).then((t) => {
-      setState(t);
-      setOffering(t.offering);
-      // You came from the landing page with a new company: start the team on it straight away.
-      if (fromUrl && name && !t.url) void setupRef.current(fromUrl, name);
-    });
+    api<TeamState>(`/api/team${c ? `?url=${encodeURIComponent(c)}` : ""}`).then(
+      (t) => {
+        setState(t);
+        setOffering(t.offering);
+        // You came from the landing page with a new company: start the team on it straight away.
+        if (fromUrl && name && !t.url) void setupRef.current(fromUrl, name);
+        else if (t.url && name) {
+          const drafted = t.leads.filter((l) => l.email).length;
+          const meetings = t.leads.filter((l) => l.meeting).length;
+          queue.current = [
+            {
+              who: "cfo",
+              text: `Welcome back, ${name.split(" ")[0]}. We're selling ${t.company ?? "your product"} to ${t.icp ? t.icp.split(/[,;.]/)[0] : "your ideal customers"}. So far: ${t.leads.length} leads, ${drafted} emails ready and ${meetings} ${meetings === 1 ? "meeting" : "meetings"} booked. I'm finding more buyers now.`,
+            },
+          ];
+        }
+      },
+    );
     /* eslint-disable react-hooks/set-state-in-effect -- read saved name, company and ?url once on mount */
     setCompanyState(c);
     setMe(localStorage.getItem("dealroom-me") ?? "");
@@ -116,21 +157,40 @@ export default function TeamRoom() {
       return who;
     });
   }, []);
+  const speakingRef = useRef(false);
+  const lastSpoke = useRef(0);
   const answer = useCallback(
     (who: string, line: string) => {
       callOver(who);
       setCaption({ who, text: line });
+      speakingRef.current = true;
       const wait = Math.max(0, 2200 - (performance.now() - approachAt.current)); // let them arrive first
       setTimeout(() => {
         setSpeaker(who);
         speak(line, who, () => {
+          speakingRef.current = false;
+          lastSpoke.current = Date.now();
           setSpeaker((cur) => (cur === who ? null : cur));
-          backTimer.current = setTimeout(() => setApproach((cur) => (cur === who ? null : cur)), 4000);
+          backTimer.current = setTimeout(
+            () => setApproach((cur) => (cur === who ? null : cur)),
+            4000,
+          );
         });
       }, wait);
     },
     [callOver],
   );
+
+  // Spoken updates wait their turn: only when nobody is talking, you are not speaking, and the browser allows audio.
+  const queue = useRef<{ who: string; text: string }[]>([]);
+  const announce = useCallback((who: string, text: string) => {
+    queue.current = [
+      ...queue.current.filter((q) => q.who !== who),
+      { who, text },
+    ].slice(-3);
+  }, []);
+  const listeningRef = useRef(false);
+  const drafts = useRef<string[]>([]);
 
   const send = useCallback(
     async (said: string, auto = false) => {
@@ -138,28 +198,49 @@ export default function TeamRoom() {
       // Background work never interrupts you and never runs while you are mid-conversation.
       if (auto && (busyRef.current || pendingUser.current > 0)) return;
       const low = said.toLowerCase();
-      const named = /\bmaya\b/.test(low) ? "cfo" : /\barjun\b/.test(low) ? "tech" : /\belena\b/.test(low) ? "procurement" : null;
+      const named = /\bmaya\b/.test(low)
+        ? "cfo"
+        : /\barjun\b/.test(low)
+          ? "tech"
+          : /\belena\b/.test(low)
+            ? "procurement"
+            : null;
       const myReq = auto ? 0 : ++userReq.current;
       if (auto) busyRef.current = true;
       else {
         pendingUser.current++;
         lastTalk.current = Date.now();
         stopSpeaking();
+        speakingRef.current = false;
         setSpeaker(null);
         setCaption({ who: me || "You", text: said });
         setText("");
         if (named) callOver(named);
       }
-      const target = state?.leads.find((l) => low.includes(l.company.toLowerCase()))?.company;
+      const target = state?.leads.find((l) =>
+        low.includes(l.company.toLowerCase()),
+      )?.company;
       setWorking(
         /arjun|email|outreach|write/.test(low)
-          ? { who: "tech", task: `writing an email${target ? ` to ${target}` : ""}` }
+          ? {
+              who: "tech",
+              task: `writing an email${target ? ` to ${target}` : ""}`,
+            }
           : /elena|pipeline|status|update|book/.test(low)
             ? { who: "procurement", task: "checking every lead and deal" }
-            : { who: "cfo", task: "searching the web with Telem and enriching with Glasser" },
+            : {
+                who: "cfo",
+                task: "searching the web with Telem and enriching with Glasser",
+              },
       );
       try {
-        const r = await api<Reply>("/api/team", { url: companyRef.current, text: said, player: me || "there", offering });
+        const r = await api<Reply>("/api/team", {
+          url: companyRef.current,
+          auto,
+          text: said,
+          player: me || "there",
+          offering,
+        });
         setState(r.state);
         if (r.found?.length) {
           setFresh(r.found.map((l) => l.id));
@@ -169,7 +250,44 @@ export default function TeamRoom() {
           setFresh((f) => [...f, r.email!.id]);
           setTimeout(() => setFresh([]), 6000);
         }
-        // Only your newest request gets a spoken answer; background work just updates the board.
+        // Background work reports back in short spoken updates (queued, never over anyone).
+        if (auto) {
+          const first = (me || "").split(" ")[0];
+          // The teammate's own line (written by the model) is what they say; the template is only a fallback.
+          if (r.found?.length) {
+            const names = r.found.map((l) => l.company);
+            const list =
+              names.length > 1
+                ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
+                : names[0];
+            announce(
+              "cfo",
+              r.line ||
+                `${first ? `${first}, ` : ""}I found ${names.length} new buyers: ${list}.`,
+            );
+          }
+          if (r.email?.email) {
+            // Arjun reports in batches of three so he isn't announcing every single email.
+            drafts.current.push(r.email.company);
+            if (drafts.current.length >= 3) {
+              const n = drafts.current.splice(0);
+              announce(
+                "tech",
+                `${first ? `${first}, ` : ""}three more emails are ready: ${n[0]}, ${n[1]} and ${n[2]}. Each one opens with the reason they need us. Click View email on any of them.`,
+              );
+            }
+            const drafted = r.state.leads.filter((l) => l.email).length;
+            if (drafted % 5 === 0) {
+              const meetings = r.state.leads.filter((l) => l.meeting).length;
+              const open = r.state.leads.filter((l) => !l.email).length;
+              announce(
+                "procurement",
+                `Pipeline update: ${r.state.leads.length} leads, ${drafted} emails ready, ${meetings} ${meetings === 1 ? "meeting" : "meetings"} booked. ${open ? `${open} leads still need an email.` : "Every lead has an email."} Book the ones you like.`,
+              );
+            }
+          }
+        }
+        // Only your newest request gets a spoken answer.
         if (!auto && myReq === userReq.current) {
           setGestures({ [r.speaker]: r.found?.length ? "nod" : "leanIn" });
           setGestureUntil(performance.now() + 2500);
@@ -181,10 +299,12 @@ export default function TeamRoom() {
         setWorking(null);
       }
     },
-    [me, offering, state, answer, callOver],
+    [me, offering, state, answer, callOver, announce],
   );
 
-  const setupRef = useRef<(url: string, name: string) => Promise<void>>(async () => {});
+  const setupRef = useRef<(url: string, name: string) => Promise<void>>(
+    async () => {},
+  );
   useEffect(() => {
     setupRef.current = setup;
   });
@@ -194,14 +314,19 @@ export default function TeamRoom() {
     busyRef.current = true;
     setBusy(true);
     try {
-      const r = await api<Reply>("/api/team", { setupUrl: url, player: name, quick: true });
+      const r = await api<Reply>("/api/team", {
+        setupUrl: url,
+        player: name,
+        quick: true,
+      });
       setState(r.state);
       setOffering(r.state.offering);
       if (r.found?.length) {
         setFresh(r.found.map((l) => l.id));
         setTimeout(() => setFresh([]), 6000);
       }
-      answer(r.speaker, r.line);
+      setCaption({ who: r.speaker, text: r.line });
+      queue.current = [{ who: r.speaker, text: r.line }];
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -215,15 +340,29 @@ export default function TeamRoom() {
   const angle = useRef(0);
   useEffect(() => {
     if (!me || !state?.url) return;
-    const ANGLES = ["companies that just raised funding", "companies hiring for the role that has this problem", "companies that just launched a new product", "fast-growing companies in our ideal customer segment", "companies expanding into new markets"];
+    const ANGLES = [
+      "companies that just raised funding",
+      "companies hiring for the role that has this problem",
+      "companies that just launched a new product",
+      "fast-growing companies in our ideal customer segment",
+      "companies expanding into new markets",
+    ];
     const t = setInterval(() => {
-      if (busyRef.current || pendingUser.current > 0 || Date.now() - lastAuto.current < 4000) return;
+      if (
+        busyRef.current ||
+        pendingUser.current > 0 ||
+        Date.now() - lastAuto.current < 4000
+      )
+        return;
       lastAuto.current = Date.now();
       const leads = state?.leads ?? [];
       const next = leads.find((l) => !l.email);
       const turn = angle.current + (next ? 0 : 1);
       // Maya and Arjun take turns: two emails, then another search, until there are 40 leads.
-      if (leads.length < 6 || (leads.length < 40 && (!next || turn % 3 === 2))) {
+      if (
+        leads.length < 6 ||
+        (leads.length < 40 && (!next || turn % 3 === 2))
+      ) {
         const a = ANGLES[angle.current++ % ANGLES.length];
         void send(`Maya, find more buyers: ${a}.`, true);
       } else if (next) {
@@ -236,25 +375,80 @@ export default function TeamRoom() {
 
   useEffect(() => {
     if (!screen || screen.shown >= screen.body.length) return;
-    const t = setTimeout(() => setScreen((x) => (x ? { ...x, shown: Math.min(x.body.length, x.shown + 3) } : x)), 18);
+    const t = setTimeout(
+      () =>
+        setScreen((x) =>
+          x ? { ...x, shown: Math.min(x.body.length, x.shown + 3) } : x,
+        ),
+      18,
+    );
     return () => clearTimeout(t);
   }, [screen]);
 
   // Talking is always available: holding Space or the button interrupts whoever is speaking.
-  const ptt = usePushToTalk((said) => void send(said), !!me && !typing && !handsFree);
-  const hf = useHandsFree((said) => void send(said), handsFree && !!me, speaker !== null);
+  const ptt = usePushToTalk(
+    (said) => void send(said),
+    !!me && !typing && !handsFree,
+  );
+  const hf = useHandsFree(
+    (said) => void send(said),
+    handsFree && !!me,
+    speaker !== null,
+  );
+  useEffect(() => {
+    listeningRef.current = ptt.listening;
+    if (ptt.listening) {
+      // You started talking: whoever was speaking stops, and you have the floor.
+      speakingRef.current = false;
+      lastSpoke.current = Date.now();
+    }
+  }, [ptt.listening]);
+  useEffect(() => {
+    const t = setInterval(() => {
+      const next = queue.current[0];
+      if (
+        !next ||
+        speakingRef.current ||
+        pendingUser.current > 0 ||
+        listeningRef.current
+      )
+        return;
+      if (Date.now() - lastSpoke.current < 2500) return;
+      // Browsers only play sound after you have clicked or pressed a key on the page.
+      const active =
+        (
+          navigator as Navigator & {
+            userActivation?: { hasBeenActive: boolean };
+          }
+        ).userActivation?.hasBeenActive ?? true;
+      if (!active) {
+        setCaption({ who: next.who, text: next.text });
+        return;
+      }
+      queue.current = queue.current.slice(1);
+      answer(next.who, next.text);
+    }, 700);
+    return () => clearInterval(t);
+  }, [answer]);
 
   // Elena books the meeting: slot, invite, lead moves to "meeting".
   async function bookLead(l: Lead) {
     if (booking) return;
     setBooking(l.id);
-    setWorking({ who: "procurement", task: `booking a meeting with ${l.company}` });
+    setWorking({
+      who: "procurement",
+      task: `booking a meeting with ${l.company}`,
+    });
     const myReq = ++userReq.current;
     pendingUser.current++;
     stopSpeaking();
     callOver("procurement");
     try {
-      const r = await api<Reply>("/api/team", { url: companyRef.current, book: l.id, player: me || "You" });
+      const r = await api<Reply>("/api/team", {
+        url: companyRef.current,
+        book: l.id,
+        player: me || "You",
+      });
       setState(r.state);
       setOpen(l.id);
       if (myReq === userReq.current) answer(r.speaker, r.line);
@@ -268,15 +462,24 @@ export default function TeamRoom() {
 
   // You mark a competitor / wrong fit: it disappears and Maya learns not to bring it (or its kind) back.
   async function notBuyer(l: Lead) {
-    setState((st) => (st ? { ...st, leads: st.leads.filter((x) => x.id !== l.id) } : st));
+    setState((st) =>
+      st ? { ...st, leads: st.leads.filter((x) => x.id !== l.id) } : st,
+    );
     if (screen?.to === l.company) setScreen(null);
-    const r = await api<{ state: TeamState }>("/api/team", { url: companyRef.current, remove: l.id });
+    const r = await api<{ state: TeamState }>("/api/team", {
+      url: companyRef.current,
+      remove: l.id,
+    });
     setState(r.state);
   }
 
   function calLink(l: Lead) {
     if (!l.meeting) return "#";
-    const f = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    const f = (d: Date) =>
+      d
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .replace(/\.\d{3}/, "");
     const a = new Date(l.meeting.start);
     const b = new Date(a.getTime() + 30 * 60000);
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(l.meeting.subject)}&dates=${f(a)}/${f(b)}&details=${encodeURIComponent(l.meeting.invite)}`;
@@ -284,10 +487,20 @@ export default function TeamRoom() {
 
   if (!state) return <p className="p-10 text-muted">Opening your team room…</p>;
 
-  const counts = { cfo: state.leads.length, tech: state.leads.filter((l) => l.email).length, procurement: state.leads.filter((l) => l.status !== "new").length };
-  const capName = caption ? TEAM.find((m) => m.id === caption.who)?.name ?? caption.who : "";
-  const live = ptt.listening ? { who: me || "You", text: ptt.interim || "…" } : caption;
-  const liveName = live ? TEAM.find((m) => m.id === live.who)?.name ?? live.who : "";
+  const counts = {
+    cfo: state.leads.length,
+    tech: state.leads.filter((l) => l.email).length,
+    procurement: state.leads.filter((l) => l.status !== "new").length,
+  };
+  const capName = caption
+    ? (TEAM.find((m) => m.id === caption.who)?.name ?? caption.who)
+    : "";
+  const live = ptt.listening
+    ? { who: me || "You", text: ptt.interim || "…" }
+    : caption;
+  const liveName = live
+    ? (TEAM.find((m) => m.id === live.who)?.name ?? live.who)
+    : "";
 
   return (
     <main className="relative h-screen w-full overflow-hidden bg-paper">
@@ -296,8 +509,12 @@ export default function TeamRoom() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              const n = (e.currentTarget.elements.namedItem("n") as HTMLInputElement).value.trim();
-              const u = (e.currentTarget.elements.namedItem("u") as HTMLInputElement).value.trim();
+              const n = (
+                e.currentTarget.elements.namedItem("n") as HTMLInputElement
+              ).value.trim();
+              const u = (
+                e.currentTarget.elements.namedItem("u") as HTMLInputElement
+              ).value.trim();
               if (!n || !u) return;
               localStorage.setItem("dealroom-me", n);
               setMe(n);
@@ -305,11 +522,29 @@ export default function TeamRoom() {
             }}
             className="card w-[min(460px,90vw)] p-6"
           >
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Your team room</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight">Maya, Arjun and Elena are ready.</h2>
-            <p className="mt-2 text-sm text-muted">Enter your company website. Maya researches you, works out who buys from you, and starts finding leads. Then just talk to the team.</p>
-            <input name="n" defaultValue={me} placeholder="Your name" className="mt-4 w-full rounded-full border border-line bg-white px-5 py-3 outline-none focus:border-ink" />
-            <input name="u" defaultValue={prefillUrl} placeholder="Your company website, e.g. yourcompany.com" className="mt-2 w-full rounded-full border border-line bg-white px-5 py-3 outline-none focus:border-ink" />
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">
+              Your team room
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+              Maya, Arjun and Elena are ready.
+            </h2>
+            <p className="mt-2 text-sm text-muted">
+              Enter your company website. Maya researches you, works out who
+              buys from you, and starts finding leads. Then just talk to the
+              team.
+            </p>
+            <input
+              name="n"
+              defaultValue={me}
+              placeholder="Your name"
+              className="mt-4 w-full rounded-full border border-line bg-white px-5 py-3 outline-none focus:border-ink"
+            />
+            <input
+              name="u"
+              defaultValue={prefillUrl}
+              placeholder="Your company website, e.g. yourcompany.com"
+              className="mt-2 w-full rounded-full border border-line bg-white px-5 py-3 outline-none focus:border-ink"
+            />
             <button className="pill-dark mt-3">
               Walk in <span className="arrow">→</span>
             </button>
@@ -318,14 +553,25 @@ export default function TeamRoom() {
       )}
       {settingUp && (
         <div className="card rise absolute left-1/2 top-24 z-40 w-[min(520px,80vw)] -translate-x-1/2 px-6 py-4 text-center">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Maya is on it</p>
-          <p className="mt-1 font-semibold">Researching {settingUp} with Telem, working out your ideal customer, then finding leads…</p>
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">
+            Maya is on it
+          </p>
+          <p className="mt-1 font-semibold">
+            Researching {settingUp} with Telem, working out your ideal customer,
+            then finding leads…
+          </p>
         </div>
       )}
 
       <div className="absolute inset-0">
         <Scene
-          execs={TEAM.map((m) => ({ id: m.id, name: m.name, role: m.role, color: EXEC_COLOR[m.id], conviction: Math.min(100, counts[m.id] * 10) }))}
+          execs={TEAM.map((m) => ({
+            id: m.id,
+            name: m.name,
+            role: m.role,
+            color: EXEC_COLOR[m.id],
+            conviction: Math.min(100, counts[m.id] * 10),
+          }))}
           gestures={gestures}
           gestureUntil={gestureUntil}
           speaker={speaker}
@@ -345,13 +591,20 @@ export default function TeamRoom() {
           <Link href="/" className="flex items-center gap-2 font-semibold">
             <span className="h-2 w-2 rounded-full bg-accent" /> Team room
           </Link>
-          <span className="max-w-[420px] truncate text-sm text-muted">{state.company ? `${state.company} · ` : ""}{state.icp ? `selling to ${state.icp}` : offering}</span>
+          <span className="max-w-[420px] truncate text-sm text-muted">
+            {state.company ? `${state.company} · ` : ""}
+            {state.icp ? `selling to ${state.icp}` : offering}
+          </span>
         </div>
         <div className="pointer-events-auto flex gap-2">
           <button onClick={changeCompany} className="card px-4 py-2.5 text-sm">
             Change company
           </button>
-          <Link href={`/crm${company ? `?url=${encodeURIComponent(company)}` : ""}`} target="_blank" className="card px-4 py-2.5 text-sm">
+          <Link
+            href={`/crm${company ? `?url=${encodeURIComponent(company)}` : ""}`}
+            target="_blank"
+            className="card px-4 py-2.5 text-sm"
+          >
             Open CRM ↗
           </Link>
         </div>
@@ -359,41 +612,72 @@ export default function TeamRoom() {
 
       {/* the team */}
       <div className="card absolute left-5 top-24 w-64 p-4">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Your team</p>
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">
+          Your team
+        </p>
         <div className="mt-3 space-y-3">
           {TEAM.map((m) => (
             <button
               key={m.id}
-              onClick={() => void send(`${m.name}, ${m.id === "cfo" ? "find me new leads" : m.id === "tech" ? "draft an email for our best new lead" : "give me a pipeline update"}.`)}
+              onClick={() =>
+                void send(
+                  `${m.name}, ${m.id === "cfo" ? "find me new leads" : m.id === "tech" ? "draft an email for our best new lead" : "give me a pipeline update"}.`,
+                )
+              }
               className={`flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition hover:bg-black/[0.04] ${speaker === m.id ? "bg-black/[0.05]" : ""}`}
             >
-              <span className="grid h-9 w-9 place-items-center rounded-full text-xs font-semibold text-white" style={{ background: EXEC_COLOR[m.id] }}>
+              <span
+                className="grid h-9 w-9 place-items-center rounded-full text-xs font-semibold text-white"
+                style={{ background: EXEC_COLOR[m.id] }}
+              >
                 {m.name.slice(0, 2).toUpperCase()}
               </span>
               <span>
                 <span className="block text-sm font-semibold">{m.name}</span>
                 <span className="block text-xs text-muted">
-                  {m.role} · {m.id === "cfo" ? `${counts.cfo} leads` : m.id === "tech" ? `${counts.tech} emails` : `${counts.procurement} in play`}
+                  {m.role} ·{" "}
+                  {m.id === "cfo"
+                    ? `${counts.cfo} leads`
+                    : m.id === "tech"
+                      ? `${counts.tech} emails`
+                      : `${counts.procurement} in play`}
                 </span>
               </span>
             </button>
           ))}
         </div>
-        <p className="mt-3 text-[11px] leading-snug text-muted">Say a name to call them: &ldquo;Maya, find fintech startups in New York&rdquo;.</p>
+        <p className="mt-3 text-[11px] leading-snug text-muted">
+          Say a name to call them: &ldquo;Maya, find fintech startups in New
+          York&rdquo;.
+        </p>
       </div>
 
       {/* what the team is doing right now */}
       {working && (
         <div className="card rise absolute left-1/2 top-24 z-20 flex -translate-x-1/2 items-center gap-3 px-5 py-3">
-          <span className="grid h-8 w-8 place-items-center rounded-full text-xs font-semibold text-white" style={{ background: EXEC_COLOR[working.who as keyof typeof EXEC_COLOR] }}>
-            {TEAM.find((m) => m.id === working.who)?.name.slice(0, 2).toUpperCase()}
+          <span
+            className="grid h-8 w-8 place-items-center rounded-full text-xs font-semibold text-white"
+            style={{
+              background: EXEC_COLOR[working.who as keyof typeof EXEC_COLOR],
+            }}
+          >
+            {TEAM.find((m) => m.id === working.who)
+              ?.name.slice(0, 2)
+              .toUpperCase()}
           </span>
           <span className="text-sm">
-            <span className="font-semibold">{TEAM.find((m) => m.id === working.who)?.name}</span> is {working.task}
+            <span className="font-semibold">
+              {TEAM.find((m) => m.id === working.who)?.name}
+            </span>{" "}
+            is {working.task}
           </span>
           <span className="flex gap-1">
             {[0, 1, 2].map((i) => (
-              <span key={i} className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink/60" style={{ animationDelay: `${i * 120}ms` }} />
+              <span
+                key={i}
+                className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink/60"
+                style={{ animationDelay: `${i * 120}ms` }}
+              />
             ))}
           </span>
         </div>
@@ -402,7 +686,8 @@ export default function TeamRoom() {
         <div className="card rise absolute left-[300px] top-[150px] z-20 w-[400px] overflow-hidden">
           <div className="flex items-center justify-between border-b border-line bg-black/[0.03] px-4 py-2 text-xs text-muted">
             <span>
-              <span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-500" /> Arjun&rsquo;s email
+              <span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-500" />{" "}
+              Arjun&rsquo;s email
             </span>
             <button onClick={() => setScreen(null)} className="hover:text-ink">
               Close
@@ -413,10 +698,15 @@ export default function TeamRoom() {
             <p className="mt-1 font-semibold">{screen.subject}</p>
             <p className="mt-2 min-h-[120px] whitespace-pre-line text-ink/85">
               {screen.body.slice(0, screen.shown)}
-              {screen.shown < screen.body.length && <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-ink align-middle" />}
+              {screen.shown < screen.body.length && (
+                <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-ink align-middle" />
+              )}
             </p>
             {screen.shown >= screen.body.length && (
-              <a href={`mailto:?subject=${encodeURIComponent(screen.subject)}&body=${encodeURIComponent(screen.body)}`} className="mt-3 inline-block text-xs underline">
+              <a
+                href={`mailto:?subject=${encodeURIComponent(screen.subject)}&body=${encodeURIComponent(screen.body)}`}
+                className="mt-3 inline-block text-xs underline"
+              >
                 Send from my email
               </a>
             )}
@@ -425,20 +715,38 @@ export default function TeamRoom() {
       )}
 
       {/* leads dashboard */}
-      <aside className={`card absolute right-5 top-24 flex flex-col overflow-hidden ${mini ? "w-[220px]" : "bottom-28 w-[360px]"}`}>
+      <aside
+        className={`card absolute right-5 top-24 flex flex-col overflow-hidden ${mini ? "w-[220px]" : "bottom-28 w-[360px]"}`}
+      >
         <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Leads · {state.leads.length}</p>
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">
+            Leads · {state.leads.length}
+          </p>
           <span className="flex items-center gap-2 text-xs text-muted">
-            {!mini && `${counts.tech} drafted · ${state.leads.filter((l) => l.status === "meeting").length} meetings`}
-            <button onClick={() => setMini((m) => !m)} className="rounded-full border border-line px-2 py-0.5 hover:border-ink" aria-label={mini ? "Expand leads" : "Minimize leads"}>
+            {!mini &&
+              `${counts.tech} drafted · ${state.leads.filter((l) => l.status === "meeting").length} meetings`}
+            <button
+              onClick={() => setMini((m) => !m)}
+              className="rounded-full border border-line px-2 py-0.5 hover:border-ink"
+              aria-label={mini ? "Expand leads" : "Minimize leads"}
+            >
               {mini ? "Show" : "—"}
             </button>
           </span>
         </div>
-        <div className={`flex-1 space-y-2 overflow-y-auto p-3 ${mini ? "hidden" : ""}`}>
-          {state.leads.length === 0 && <p className="p-2 text-sm text-muted">No leads yet. Say &ldquo;Maya, find me leads&rdquo;.</p>}
+        <div
+          className={`flex-1 space-y-2 overflow-y-auto p-3 ${mini ? "hidden" : ""}`}
+        >
+          {state.leads.length === 0 && (
+            <p className="p-2 text-sm text-muted">
+              No leads yet. Say &ldquo;Maya, find me leads&rdquo;.
+            </p>
+          )}
           {state.leads.map((l) => (
-            <div key={l.id} className={`rise rounded-xl border bg-white p-3 text-sm ${fresh.includes(l.id) ? "border-accent" : "border-line"}`}>
+            <div
+              key={l.id}
+              className={`rise rounded-xl border bg-white p-3 text-sm ${fresh.includes(l.id) ? "border-accent" : "border-line"}`}
+            >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{l.company}</p>
@@ -449,7 +757,11 @@ export default function TeamRoom() {
                   </p>
                 </div>
                 <span className="flex shrink-0 items-center gap-1.5">
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[l.status]}`}>{l.status}</span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[l.status]}`}
+                  >
+                    {l.status}
+                  </span>
                   <button
                     onClick={() => void notBuyer(l)}
                     title="Not a buyer (competitor or wrong fit). Maya won't suggest it again."
@@ -474,28 +786,58 @@ export default function TeamRoom() {
                 <button
                   onClick={() =>
                     l.email
-                      ? setScreen(screen?.to === l.company ? null : { who: "tech", to: l.company, subject: l.email.subject, body: l.email.body, shown: 0 })
+                      ? setScreen(
+                          screen?.to === l.company
+                            ? null
+                            : {
+                                who: "tech",
+                                to: l.company,
+                                subject: l.email.subject,
+                                body: l.email.body,
+                                shown: 0,
+                              },
+                        )
                       : void send(`Arjun, draft an email for ${l.company}.`)
                   }
                   className={`rounded-full border px-3 py-1 text-xs hover:border-ink ${l.email && screen?.to === l.company ? "border-ink bg-black/[0.05]" : "border-line"}`}
                 >
-                  {l.email ? (screen?.to === l.company ? "Hide email" : "View email") : "Draft email"}
+                  {l.email
+                    ? screen?.to === l.company
+                      ? "Hide email"
+                      : "View email"
+                    : "Draft email"}
                 </button>
                 {l.meeting ? (
-                  <a href={calLink(l)} target="_blank" className="rounded-full bg-emerald-600 px-3 py-1 text-xs text-white">
+                  <a
+                    href={calLink(l)}
+                    target="_blank"
+                    className="rounded-full bg-emerald-600 px-3 py-1 text-xs text-white"
+                  >
                     Booked · {l.meeting.when}
                   </a>
                 ) : (
-                  <button onClick={() => void bookLead(l)} disabled={!!booking} className="rounded-full bg-ink px-3 py-1 text-xs text-white disabled:opacity-60">
+                  <button
+                    onClick={() => void bookLead(l)}
+                    disabled={!!booking}
+                    className="rounded-full bg-ink px-3 py-1 text-xs text-white disabled:opacity-60"
+                  >
                     {booking === l.id ? "Elena is booking…" : "Book meeting →"}
                   </button>
                 )}
               </div>
               {open === l.id && l.meeting && (
                 <div className="mt-2 rounded-lg bg-emerald-50 p-2.5 text-xs">
-                  <p className="font-semibold">{l.meeting.subject} · {l.meeting.when}</p>
-                  <p className="mt-1 whitespace-pre-line text-ink/85">{l.meeting.invite}</p>
-                  <a href={calLink(l)} target="_blank" className="mt-2 inline-block underline">
+                  <p className="font-semibold">
+                    {l.meeting.subject} · {l.meeting.when}
+                  </p>
+                  <p className="mt-1 whitespace-pre-line text-ink/85">
+                    {l.meeting.invite}
+                  </p>
+                  <a
+                    href={calLink(l)}
+                    target="_blank"
+                    className="mt-2 inline-block underline"
+                  >
                     Add to Google Calendar
                   </a>
                 </div>
@@ -508,7 +850,9 @@ export default function TeamRoom() {
       {live && (
         <div className="rise pointer-events-none absolute bottom-32 left-72 right-[390px] flex justify-center px-6">
           <div className="max-w-2xl rounded-2xl bg-black/70 px-6 py-3 text-center text-white backdrop-blur">
-            <span className="mr-2 text-sm font-semibold uppercase tracking-wide">{liveName}</span>
+            <span className="mr-2 text-sm font-semibold uppercase tracking-wide">
+              {liveName}
+            </span>
             <span className="text-lg leading-snug">{live.text}</span>
           </div>
         </div>
@@ -523,8 +867,18 @@ export default function TeamRoom() {
             }}
             className="card flex w-[min(640px,90vw)] items-center gap-2 p-2"
           >
-            <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Talk to your team, e.g. Maya, find me leads in healthcare" className="flex-1 bg-transparent px-3 py-2 outline-none" />
-            <button type="button" onClick={() => setTyping(false)} className="px-3 text-sm text-muted">
+            <input
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Talk to your team, e.g. Maya, find me leads in healthcare"
+              className="flex-1 bg-transparent px-3 py-2 outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => setTyping(false)}
+              className="px-3 text-sm text-muted"
+            >
               Use voice
             </button>
             <button disabled={!text.trim()} className="pill-dark text-sm">
@@ -541,13 +895,27 @@ export default function TeamRoom() {
               onPointerLeave={ptt.stop}
               className={`flex items-center gap-3 rounded-full px-7 py-4 font-medium text-white shadow-lg transition disabled:opacity-50 ${ptt.listening ? "scale-105 bg-accent" : "bg-ink"}`}
             >
-              <span className={`h-3 w-3 rounded-full ${ptt.listening ? "animate-pulse bg-white" : "bg-accent"}`} />
-              {ptt.listening ? "Listening, release to send" : "Hold Space to talk"}
+              <span
+                className={`h-3 w-3 rounded-full ${ptt.listening ? "animate-pulse bg-white" : "bg-accent"}`}
+              />
+              {ptt.listening
+                ? "Listening, release to send"
+                : "Hold Space to talk"}
             </button>
-            <button type="button" onClick={() => setHandsFree((h) => !h)} className={`card px-4 py-3 text-sm ${handsFree ? "ring-2 ring-accent" : ""}`}>
-              {handsFree ? `● Hands-free${hf.heard ? `: ${hf.heard.slice(0, 30)}` : ""}` : "Hands-free"}
+            <button
+              type="button"
+              onClick={() => setHandsFree((h) => !h)}
+              className={`card px-4 py-3 text-sm ${handsFree ? "ring-2 ring-accent" : ""}`}
+            >
+              {handsFree
+                ? `● Hands-free${hf.heard ? `: ${hf.heard.slice(0, 30)}` : ""}`
+                : "Hands-free"}
             </button>
-            <button type="button" onClick={() => setTyping(true)} className="card px-4 py-3 text-sm">
+            <button
+              type="button"
+              onClick={() => setTyping(true)}
+              className="card px-4 py-3 text-sm"
+            >
               Type instead
             </button>
           </div>

@@ -1,5 +1,6 @@
 import { bookMeeting, loadTeam, removeLead, pruneCompetitors, teamSetup, teamTurn, withCompany } from "@/lib/agents/team";
 import { writeEvents } from "@/lib/db";
+import { withModel } from "@/lib/llm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,8 +13,9 @@ export async function GET(req: Request) {
 
 /** Talk to your team. The right teammate answers and does the work. */
 export async function POST(req: Request) {
-  const body = (await req.json()) as { url?: string; setupUrl?: string };
-  return withCompany(body.setupUrl || body.url, () => handle(body));
+  const body = (await req.json()) as { url?: string; setupUrl?: string; auto?: boolean };
+  // You talking: the fast top model (default). Background work (lead picks, emails): the deepest model, since nobody waits on it.
+  return withCompany(body.setupUrl || body.url, () => withModel(body.auto ? "gpt-6.2-astra" : undefined, () => handle(body)));
 }
 
 async function handle(body: unknown) {
