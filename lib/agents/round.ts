@@ -25,7 +25,7 @@ const EVENT_TEXT: Record<string, string> = {
  */
 export async function runRound(
   s: SessionState,
-  input: { player?: string; utterance?: string; auto?: boolean },
+  input: { player?: string; utterance?: string; auto?: boolean; called?: ExecId | null },
 ): Promise<{ events: EventRow[]; res: TurnResponse }> {
   const id = s.id;
   const turn = s.turn + 1;
@@ -62,7 +62,7 @@ export async function runRound(
     });
   }
 
-  const labelled = input.auto ? utterance : `${player} (seller team) says: ${utterance}`;
+  const labelled = input.auto ? utterance : `${player} (seller team) says: ${utterance}${input.called ? ` [${player} is speaking directly to ${s.personas.find((p) => p.id === input.called)?.name}, who should answer them personally]` : ""}`;
   const inboxes = await Promise.all(EXEC_IDS.map((e) => inbox(room, e)));
   const results = await Promise.all(
     s.personas.map((p, i) =>
@@ -71,7 +71,8 @@ export async function runRound(
   );
   const turns = Object.fromEntries(s.personas.map((p, i) => [p.id, results[i]])) as Record<ExecId, ExecTurn>;
 
-  const speaker = pickSpeaker(turns);
+  // Called by name: that executive answers, and walks over to the seller.
+  const speaker = input.called && turns[input.called] ? input.called : pickSpeaker(turns);
   if (!input.auto) s.transcript.push({ turn, speaker: player, text: utterance });
   s.transcript.push({ turn, speaker, text: turns[speaker].spokenLine });
 
@@ -184,7 +185,7 @@ export async function runRound(
   s.seq = seq;
   s.log ??= [];
   log.forEach((e, i) => s.log!.push({ ...e, key: `${seq}-${i}` }));
-  s.live = { speaker, line: turns[speaker].spokenLine, gestures, gestureAt: Date.now(), check: factChecks[factChecks.length - 1] ?? null, whispers: whisperPairs, event: worldEvent };
+  s.live = { speaker, line: turns[speaker].spokenLine, gestures, gestureAt: Date.now(), check: factChecks[factChecks.length - 1] ?? null, whispers: whisperPairs, event: worldEvent, approach: input.called ?? null, crm: null };
   s.turn = turn;
 
   const res: TurnResponse = {

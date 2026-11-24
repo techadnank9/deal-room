@@ -24,6 +24,8 @@ export type SceneProps = {
   check: ClaimCheck | null;
   analystBusy: boolean;
   backdropUrl?: string | null;
+  /** Agent the human called by name: walks round the table to the front to talk to them. */
+  approach?: string | null;
 };
 
 const SLOTS: Record<string, [number, number]> = {
@@ -46,11 +48,13 @@ function execTargets(p: SceneProps, id: string, i: number): { state: ExecState; 
     }
     return { state: "leaving", target: EXIT, facing: Math.PI / 2 };
   }
+  if (p.approach === id) return { state: p.speaker === id ? "speaking" : "listening", target: [slot[0] * 0.45, 1.05], facing: 0 };
+  // Whispers turn heads only; nobody leaves their place at the table.
   const w = p.whispers.find((x) => x.from === id);
   if (w && SLOTS[w.to]) {
     const to = SLOTS[w.to];
     const side = Math.sign(slot[0] - to[0]) || 1;
-    return { state: "whispering", target: [slot[0] + (to[0] - slot[0]) * 0.45, slot[1] + 0.05], facing: side > 0 ? -Math.PI / 2 : Math.PI / 2 };
+    return { state: "whispering", target: slot, facing: side > 0 ? -Math.PI / 2 : Math.PI / 2 };
   }
   if (p.whispers.some((x) => x.to === id)) {
     const from = p.whispers.find((x) => x.to === id)!.from;
@@ -242,8 +246,13 @@ function Room({ backdropUrl }: { backdropUrl?: string | null }) {
 export default function Scene(p: SceneProps) {
   const focus = useMemo<[number, number] | null>(() => {
     if (p.votes || p.userTalking || !p.speaker) return null;
+    if (p.approach && p.approach === p.speaker) {
+      const slot = p.approach === "analyst" ? ([1.6 / 0.45, 0] as [number, number]) : SLOTS[p.approach];
+      return slot ? ([slot[0] * 0.45, 1.05] as [number, number]) : null;
+    }
+    if (p.speaker === "analyst") return ANALYST_SPOT;
     return SLOTS[p.speaker] ?? null;
-  }, [p.votes, p.userTalking, p.speaker]);
+  }, [p.votes, p.userTalking, p.speaker, p.approach]);
 
   return (
     <Canvas shadows camera={{ position: [0, 2.6, 5.6], fov: 50 }} dpr={[1, 2]}>
@@ -289,9 +298,9 @@ export default function Scene(p: SceneProps) {
         name="Analyst"
         role="fact checks"
         color="#f472b6"
-        state={p.analystBusy ? "reacting" : "listening"}
-        target={ANALYST_SPOT}
-        facing={-0.5}
+        state={p.speaker === "analyst" ? "speaking" : p.analystBusy ? "reacting" : "listening"}
+        target={p.approach === "analyst" ? [1.6, 1.05] : ANALYST_SPOT}
+        facing={p.approach === "analyst" ? 0 : -0.5}
         gesture={p.analystBusy ? "nod" : "idle"}
         gestureUntil={p.analystBusy ? Number.MAX_SAFE_INTEGER : 0}
         start={ANALYST_SPOT}

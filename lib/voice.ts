@@ -197,3 +197,54 @@ export function usePushToTalk(onFinal: (text: string) => void, enabled: boolean)
 
   return { supported, listening, interim, start, stop };
 }
+
+/**
+ * Hands-free: keep listening; every finished sentence (after a short pause) is sent.
+ * Pauses while an agent is speaking so it doesn't hear itself.
+ */
+export function useHandsFree(onFinal: (text: string) => void, on: boolean, paused: boolean) {
+  const [heard, setHeard] = useState("");
+  const cb = useRef(onFinal);
+  useEffect(() => {
+    cb.current = onFinal;
+  }, [onFinal]);
+  useEffect(() => {
+    if (!on || paused) return;
+    const r = makeRecognition();
+    if (!r) return;
+    let alive = true;
+    r.continuous = true;
+    r.interimResults = true;
+    r.lang = "en-US";
+    r.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) {
+          const said = res[0].transcript.trim();
+          setHeard("");
+          if (said.split(/\s+/).length >= 2) cb.current(said);
+        } else interim += res[0].transcript;
+      }
+      if (interim) setHeard(interim.trim());
+    };
+    r.onerror = () => {};
+    r.onend = () => {
+      if (alive) {
+        try {
+          r.start();
+        } catch {}
+      }
+    };
+    try {
+      r.start();
+    } catch {}
+    return () => {
+      alive = false;
+      try {
+        r.abort();
+      } catch {}
+    };
+  }, [on, paused]);
+  return { heard };
+}

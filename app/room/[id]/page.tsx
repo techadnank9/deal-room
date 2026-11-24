@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import DecisionLog, { type LogEntry } from "@/components/room/DecisionLog";
 import ModelPicker from "@/components/ModelPicker";
 import { api, EXEC_COLOR, EXEC_LABEL, initials } from "@/lib/ui";
-import { speak, stopSpeaking, usePushToTalk } from "@/lib/voice";
+import { speak, stopSpeaking, useHandsFree, usePushToTalk } from "@/lib/voice";
 import { MAX_TURNS, type ClaimCheck, type ExecId, type Gesture, type SessionState, type TurnResponse, type Vote } from "@/lib/types";
 
 const Scene = dynamic(() => import("@/components/room/Scene"), {
@@ -45,6 +45,9 @@ export default function RoomPage() {
   const [me, setMe] = useState("");
   const [nameDraft, setNameDraft] = useState("");
   const [worldEvent, setWorldEvent] = useState<{ kind: string; text: string; by: string } | null>(null);
+  const [approach, setApproach] = useState<string | null>(null);
+  const [crm, setCrm] = useState<NonNullable<NonNullable<SessionState["live"]>["crm"]> | null>(null);
+  const [handsFree, setHandsFree] = useState(false);
   const seqRef = useRef(-1);
   const busyRef = useRef(false);
   const mutedRef = useRef(false);
@@ -98,6 +101,8 @@ export default function RoomPage() {
           setLastCheck(lv.check);
           setCheckKey((k) => k + 1);
         }
+        setApproach(lv.approach ?? null);
+        if (lv.crm) setCrm(lv.crm);
         if (lv.event) {
           setWorldEvent(lv.event);
           setTimeout(() => setWorldEvent(null), 9000);
@@ -193,7 +198,7 @@ export default function RoomPage() {
     try {
       busyRef.current = true;
       const r = await api<TurnResponse>("/api/turn", { id, text: utterance, player: me });
-      setDeltas(Object.fromEntries(Object.entries(r.thoughts).map(([k, t]) => [k, t.delta])));
+      if (r.thoughts) setDeltas(Object.fromEntries(Object.entries(r.thoughts).map(([k, t]) => [k, t.delta])));
       busyRef.current = false;
       await refresh();
       setText("");
@@ -207,7 +212,8 @@ export default function RoomPage() {
     }
   }
 
-  const ptt = usePushToTalk((said) => void send(said), !!s && !busy && !votes && !typing);
+  const ptt = usePushToTalk((said) => void send(said), !!s && !busy && !votes && !typing && !handsFree);
+  const hf = useHandsFree((said) => void send(said), handsFree && !!s && !votes, busy || speaker !== null);
 
   if (err && !s) return <p className="p-10 text-red-600">{err}</p>;
   if (!s) return <p className="p-10 text-muted">Opening the room…</p>;
@@ -263,6 +269,7 @@ export default function RoomPage() {
           votes={votes}
           check={lastCheck}
           analystBusy={busy && userTalking}
+          approach={approach}
           backdropUrl={s.backdropUrl ? `/api/image?url=${encodeURIComponent(s.backdropUrl)}` : null}
         />
       </div>
@@ -342,12 +349,14 @@ export default function RoomPage() {
             const vote = votes?.find((v) => v.id === p.id);
             return (
               <div key={p.id} className={`flex items-center gap-3 rounded-xl p-1.5 transition ${speaker === p.id ? "bg-black/[0.04]" : ""}`}>
-                <div
-                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold text-white"
-                  style={{ background: EXEC_COLOR[p.id] }}
-                >
-                  {initials(p.name)}
-                </div>
+                {s.portraits?.[p.id] ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={`/api/image?url=${encodeURIComponent(s.portraits[p.id]!)}`} alt={p.name} className="h-10 w-10 shrink-0 rounded-full object-cover" style={{ boxShadow: `0 0 0 2px ${EXEC_COLOR[p.id]}` }} />
+                ) : (
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold text-white" style={{ background: EXEC_COLOR[p.id] }}>
+                    {initials(p.name)}
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-sm font-semibold">{p.name}</span>
@@ -373,8 +382,60 @@ export default function RoomPage() {
               </div>
             );
           })}
+          <div className={`flex items-center gap-3 rounded-xl p-1.5 transition ${speaker === ("analyst" as ExecId) ? "bg-black/[0.04]" : ""}`}>
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold text-white" style={{ background: "#db2777" }}>
+              AN
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="text-sm font-semibold">Analyst</span>
+              <div className="text-xs text-muted">Fact checks, CRM, follow-ups. Say &ldquo;analyst, update me on the leads&rdquo;</div>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* CRM pulled up by the analyst */}
+      {crm && !votes && (
+        <div className="card rise absolute bottom-28 left-5 z-20 max-h-[60vh] w-[440px] overflow-y-auto p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Analyst · CRM</p>
+            <button onClick={() => setCrm(null)} className="text-xs text-muted hover:text-ink">
+              Close
+            </button>
+          </div>
+          <table className="mt-3 w-full text-xs">
+            <thead>
+              <tr className="text-left text-muted">
+                <th className="pb-1 font-medium">Account</th>
+                <th className="pb-1 font-medium">Stage</th>
+                <th className="pb-1 font-medium">Risk</th>
+                <th className="pb-1 font-medium">Next</th>
+              </tr>
+            </thead>
+            <tbody>
+              {crm.leads.map((l) => (
+                <tr key={l.id} className="border-t border-line align-top">
+                  <td className="py-1.5 pr-2 font-semibold">{l.company}</td>
+                  <td className="py-1.5 pr-2">{l.stage}</td>
+                  <td className={`py-1.5 pr-2 font-semibold ${l.risk === "High" ? "text-red-600" : l.risk === "Medium" ? "text-amber-700" : "text-emerald-700"}`}>{l.risk}</td>
+                  <td className="py-1.5 text-muted">{l.next}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-4 rounded-xl border border-line bg-white p-3 text-sm">
+            <p className="text-xs text-muted">Draft follow-up · to {crm.email.to}</p>
+            <p className="mt-1 font-semibold">{crm.email.subject}</p>
+            <p className="mt-1 whitespace-pre-line text-ink/85">{crm.email.body}</p>
+            <a
+              href={`mailto:?subject=${encodeURIComponent(crm.email.subject)}&body=${encodeURIComponent(crm.email.body)}`}
+              className="pill-dark mt-3 text-xs"
+            >
+              Open in email <span className="arrow">→</span>
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* fact check toast */}
       {lastCheck && !votes && (
@@ -433,8 +494,8 @@ export default function RoomPage() {
       {live && !votes && (
         <div key={live.key} className="rise pointer-events-none absolute inset-x-0 bottom-32 flex justify-center px-6">
           <div className="max-w-3xl rounded-2xl bg-black/70 px-6 py-3 text-center text-white backdrop-blur">
-            <span className="mr-2 text-sm font-semibold uppercase tracking-wide" style={{ color: captionPersona ? "#fff" : "#ffb39c" }}>
-              {captionPersona ? captionPersona.name : "You"}
+            <span className="mr-2 text-sm font-semibold uppercase tracking-wide" style={{ color: captionPersona || live.who === "analyst" ? "#fff" : "#ffb39c" }}>
+              {captionPersona ? captionPersona.name : live.who === "analyst" ? "Analyst" : live.who}
             </span>
             <span className="text-lg leading-snug">{live.text}</span>
           </div>
@@ -480,6 +541,14 @@ export default function RoomPage() {
             >
               <span className={`h-3 w-3 rounded-full ${ptt.listening ? "animate-pulse bg-white" : "bg-accent"}`} />
               {busy ? "They're thinking…" : ptt.listening ? "Listening, release to send" : ptt.supported ? "Hold Space to talk" : "Voice needs Chrome"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setHandsFree((h) => !h)}
+              className={`card px-4 py-3 text-sm ${handsFree ? "ring-2 ring-accent" : ""}`}
+              title="Keep the mic open: just talk, call anyone by name"
+            >
+              {handsFree ? `● Hands-free${hf.heard ? `: ${hf.heard.slice(0, 40)}` : ""}` : "Hands-free"}
             </button>
             <button type="button" onClick={() => setTyping(true)} className="card px-4 py-3 text-sm">
               Type instead

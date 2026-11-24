@@ -87,7 +87,7 @@ export type SessionState = {
   worldEvents?: { turn: number; by: ExecId; kind: string; text: string }[];
   log?: SharedLogEntry[];
   seq?: number;
-  live?: { speaker: string; line: string; gestures: Record<string, Gesture>; gestureAt: number; check: ClaimCheck | null; whispers: { from: string; to: string }[]; event: { kind: string; text: string; by: string } | null };
+  live?: { speaker: string; line: string; gestures: Record<string, Gesture>; gestureAt: number; check: ClaimCheck | null; whispers: { from: string; to: string }[]; event: { kind: string; text: string; by: string } | null; approach?: string | null; crm?: { spoken: string; leads: { company: string; stage: string; risk: string; room: number; next: string; id: string }[]; email: { to: string; subject: string; body: string } } | null };
   lastHumanAt?: number;
   busyUntil?: number;
   autoStreak?: number;
