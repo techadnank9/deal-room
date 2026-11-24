@@ -200,7 +200,7 @@ export default function TeamRoom() {
           votes={null}
           check={null}
           analystBusy={busy}
-          approach={speaker}
+          approach={null}
         />
       </div>
 

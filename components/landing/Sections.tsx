@@ -29,7 +29,7 @@ function Cta({ children = "Enter your team room" }: { children?: React.ReactNode
 export function Nav() {
   return (
     <header className="sticky top-3 z-30 px-4">
-      <nav className="mx-auto flex max-w-5xl items-center justify-between gap-4 rounded-full border border-line bg-paper/80 py-2 pl-5 pr-2 backdrop-blur-md">
+      <nav className="mx-auto flex max-w-5xl items-center justify-between gap-4 rounded-full border border-line bg-paper py-2 pl-5 pr-2 shadow-sm">
         <Link href="/" aria-current="page" className="flex items-center gap-2 text-base font-semibold tracking-tight">
           <span className="h-2.5 w-2.5 rounded-full bg-accent" /> Deal Room
         </Link>
@@ -37,13 +37,13 @@ export function Nav() {
           <a href="/how-it-works" className="hidden rounded-full px-3 py-2 text-muted transition-colors duration-300 hover:text-ink md:inline">
             How it works
           </a>
-          <a href="#scorecard" className="hidden rounded-full px-3 py-2 text-muted transition-colors duration-300 hover:text-ink md:inline">
+          <a href="#scorecard" className="hidden rounded-full px-3 py-2 text-muted transition-colors duration-300 hover:text-ink lg:inline">
             Scorecard
           </a>
-          <Link href="/deals" className="rounded-full px-3 py-2 text-muted transition-colors duration-300 hover:text-ink">
+          <Link href="/deals" className="hidden rounded-full px-3 py-2 text-muted sm:inline transition-colors duration-300 hover:text-ink">
             Pipeline
           </Link>
-          <Link href="/history" className="rounded-full px-3 py-2 text-muted transition-colors duration-300 hover:text-ink">
+          <Link href="/history" className="hidden rounded-full px-3 py-2 text-muted lg:inline transition-colors duration-300 hover:text-ink">
             History
           </Link>
           <Link
@@ -61,7 +61,7 @@ export function Nav() {
 export function Hero() {
   return (
     <section className="glow relative overflow-hidden">
-      <div className="mx-auto grid w-full max-w-6xl gap-12 px-6 pb-24 pt-16 md:grid-cols-[1fr_1.05fr] md:items-center md:px-8 md:pt-24">
+      <div className="mx-auto grid w-full max-w-6xl gap-12 px-6 pb-24 pt-16 lg:grid-cols-[1fr_1.05fr] lg:items-center md:px-8 md:pt-24">
         <div className="rise">
           <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-line bg-white/70 px-3 py-1 text-sm text-muted">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" /> Humans and AI executives in one room
@@ -88,15 +88,15 @@ export function Hero() {
         </div>
 
         {/* collage: stacked on mobile, layered on desktop */}
-        <div className="relative flex flex-col items-center gap-4 md:block md:h-[640px]">
-          <div className="flex gap-3 md:contents">
-            <PortraitCard role="cfo" className="-rotate-3 md:absolute md:left-[2%] md:top-[2%]" />
-            <PortraitCard role="tech" className="rotate-2 translate-y-4 md:absolute md:left-[36%] md:top-0 md:translate-y-0" />
-            <PortraitCard role="procurement" className="-rotate-2 hidden sm:block md:absolute md:left-[70%] md:top-[6%]" />
+        <div className="relative flex flex-col items-center gap-4 lg:block md:h-[640px]">
+          <div className="flex gap-3 lg:contents">
+            <PortraitCard role="cfo" className="-rotate-3 lg:absolute lg:left-[2%] lg:top-[2%]" />
+            <PortraitCard role="tech" className="rotate-2 translate-y-4 lg:absolute lg:left-[36%] lg:top-0 lg:translate-y-0" />
+            <PortraitCard role="procurement" className="-rotate-2 hidden sm:block lg:absolute lg:left-[70%] lg:top-[6%]" />
           </div>
-          <RoomReadCard className="rise md:absolute md:left-0 md:top-[41%] md:-rotate-1" />
-          <FactCheckCard className="rise md:absolute md:left-[34%] md:top-[70%] md:rotate-1 [animation-delay:120ms]" />
-          <WhisperCard className="rise hidden md:absolute md:left-[57%] md:top-[44%] md:block md:rotate-2 [animation-delay:240ms]" />
+          <RoomReadCard className="rise lg:absolute md:left-0 lg:top-[41%] lg:-rotate-1" />
+          <FactCheckCard className="rise lg:absolute lg:left-[34%] lg:top-[70%] lg:rotate-1 [animation-delay:120ms]" />
+          <WhisperCard className="rise hidden lg:absolute lg:left-[57%] lg:top-[44%] lg:block lg:rotate-2 [animation-delay:240ms]" />
         </div>
       </div>
     </section>

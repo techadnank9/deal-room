@@ -19,7 +19,8 @@ export default function HeroForm() {
         required
         value={url}
         onChange={(e) => setUrl(e.target.value)}
-        placeholder="Your company website, e.g. yourcompany.com"
+        placeholder="yourcompany.com"
+        aria-label="Your company website"
         className="min-w-0 flex-1 bg-transparent py-3 text-base outline-none"
       />
       <button className="pill-dark shrink-0">

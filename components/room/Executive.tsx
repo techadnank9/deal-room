@@ -27,7 +27,7 @@ export type ExecutiveProps = {
   showLabel?: boolean;
 };
 type BodyProps = ExecutiveProps & { walking: RefObject<boolean> };
-const WALK_SPEED = 2.1;
+const WALK_SPEED = 1.1;
 
 /** Route around the table's clearance rectangle, including mid-walk verdict changes. */
 function routeTo(x: number, z: number, tx: number, tz: number): [number, number][] {

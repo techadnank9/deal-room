@@ -86,11 +86,24 @@ export async function teamTurn(text: string, player: string, offeringInput?: str
       mock: () => ({ leads: [], say: `${player}, I couldn't reach live search right now.` }),
     });
     const ours = (t.url ? domainOf(t.url) : "").split(".")[0];
-    const fresh = data.leads
+    const fresh: typeof data.leads = data.leads
       .filter((l) => !l.sellsSameKindOfProduct)
       .filter((l) => l.company && !t.leads.some((x) => x.company.toLowerCase() === l.company.toLowerCase()))
       .filter((l) => !ours || (!domainOf(l.domain || "").startsWith(ours) && !l.company.toLowerCase().replace(/\s/g, "").includes(ours)))
       .slice(0, 5);
+    // Second check: drop anyone who sells what we sell (competitors are not leads).
+    if (fresh.length) {
+      const { data: judge } = await llmJSON<{ competitors: string[] }>({
+        label: "team-competitors",
+        maxTokens: 300,
+        system: "List which of these companies are competitors of the seller: they sell a product or service in the same category (for a QA/testing tool, any QA, testing or test-automation company or agency is a competitor). Return their names exactly as given; return [] if none.",
+        user: `Seller sells: ${t.offering}\nCompanies:\n${fresh.map((l) => `${l.company}: ${l.why}`).join("\n")}`,
+        schema: obj({ competitors: arr(str()) }),
+        mock: () => ({ competitors: [] }),
+      });
+      const bad = new Set(judge.competitors.map((c) => c.toLowerCase()));
+      fresh.splice(0, fresh.length, ...fresh.filter((l) => !bad.has(l.company.toLowerCase())));
+    }
     const enriched = await Promise.all(
       fresh.map(async (l, i) => {
         const domain = domainOf(l.domain || l.company);
