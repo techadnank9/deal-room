@@ -57,6 +57,8 @@ export default function TeamRoom() {
   const [gestures, setGestures] = useState<Record<string, Gesture>>({});
   const [gestureUntil, setGestureUntil] = useState(0);
   const [settingUp, setSettingUp] = useState<string | null>(null);
+  const [working, setWorking] = useState<{ who: string; task: string } | null>(null);
+  const [screen, setScreen] = useState<{ who: string; to: string; subject: string; body: string; shown: number } | null>(null);
   const [prefillUrl, setPrefillUrl] = useState("");
   const busyRef = useRef(false);
   const lastTalk = useRef(0);
@@ -81,6 +83,15 @@ export default function TeamRoom() {
       if (!auto) lastTalk.current = Date.now();
       stopSpeaking();
       if (!auto) setCaption({ who: me || "You", text: said });
+      const low = said.toLowerCase();
+      const target = state?.leads.find((l) => low.includes(l.company.toLowerCase()))?.company;
+      setWorking(
+        /arjun|email|outreach|write/.test(low)
+          ? { who: "tech", task: `writing an email${target ? ` to ${target}` : ""}` }
+          : /elena|pipeline|status|update/.test(low)
+            ? { who: "procurement", task: "checking every lead and deal" }
+            : { who: "cfo", task: "searching the web with Telem and enriching with Glasser" },
+      );
       try {
         const r = await api<Reply>("/api/team", { text: said, player: me || "there", offering });
         setState(r.state);
@@ -92,16 +103,20 @@ export default function TeamRoom() {
           setFresh(r.found.map((l) => l.id));
           setTimeout(() => setFresh([]), 6000);
         }
-        if (r.email) setOpen(r.email.id);
+        if (r.email?.email) {
+          setOpen(r.email.id);
+          setScreen({ who: "tech", to: r.email.company, subject: r.email.email.subject, body: r.email.email.body, shown: 0 });
+        }
         const who = r.speaker;
         speak(r.line, who, () => setSpeaker((cur) => (cur === who ? null : cur)));
         setText("");
       } finally {
         busyRef.current = false;
         setBusy(false);
+        setWorking(null);
       }
     },
-    [me, offering],
+    [me, offering, state],
   );
 
   async function setup(url: string, name: string) {
@@ -132,13 +147,20 @@ export default function TeamRoom() {
   useEffect(() => {
     if (!me || !offering) return;
     const t = setInterval(() => {
-      if (!busyRef.current && Date.now() - lastTalk.current > 60000 && (state?.leads.length ?? 0) < 25) {
-        lastTalk.current = Date.now();
-        void send("Maya, keep going: find a few more leads like the best ones we have.", true);
-      }
+      if (busyRef.current || Date.now() - lastTalk.current < 25000) return;
+      lastTalk.current = Date.now();
+      const next = state?.leads.find((l) => !l.email);
+      if (next) void send(`Arjun, draft an email for ${next.company}.`, true);
+      else if ((state?.leads.length ?? 0) < 25) void send("Maya, keep going: find a few more leads like the best ones we have.", true);
     }, 10000);
     return () => clearInterval(t);
-  }, [me, offering, state?.leads.length, send]);
+  }, [me, offering, state, send]);
+
+  useEffect(() => {
+    if (!screen || screen.shown >= screen.body.length) return;
+    const t = setTimeout(() => setScreen((x) => (x ? { ...x, shown: Math.min(x.body.length, x.shown + 3) } : x)), 18);
+    return () => clearTimeout(t);
+  }, [screen]);
 
   const ptt = usePushToTalk((said) => void send(said), !!me && !busy && !typing && !handsFree);
   const hf = useHandsFree((said) => void send(said), handsFree && !!me, busy || speaker !== null);
@@ -242,6 +264,43 @@ export default function TeamRoom() {
         </div>
         <p className="mt-3 text-[11px] leading-snug text-muted">Say a name to call them: &ldquo;Maya, find fintech startups in New York&rdquo;.</p>
       </div>
+
+      {/* what the team is doing right now */}
+      {working && (
+        <div className="card rise absolute left-1/2 top-24 z-20 flex -translate-x-1/2 items-center gap-3 px-5 py-3">
+          <span className="grid h-8 w-8 place-items-center rounded-full text-xs font-semibold text-white" style={{ background: EXEC_COLOR[working.who as keyof typeof EXEC_COLOR] }}>
+            {TEAM.find((m) => m.id === working.who)?.name.slice(0, 2).toUpperCase()}
+          </span>
+          <span className="text-sm">
+            <span className="font-semibold">{TEAM.find((m) => m.id === working.who)?.name}</span> is {working.task}
+          </span>
+          <span className="flex gap-1">
+            {[0, 1, 2].map((i) => (
+              <span key={i} className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink/60" style={{ animationDelay: `${i * 120}ms` }} />
+            ))}
+          </span>
+        </div>
+      )}
+      {screen && (
+        <div className="card rise absolute left-[300px] top-[150px] z-20 w-[400px] overflow-hidden">
+          <div className="flex items-center justify-between border-b border-line bg-black/[0.03] px-4 py-2 text-xs text-muted">
+            <span>
+              <span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-500" /> Arjun&rsquo;s screen · New email
+            </span>
+            <button onClick={() => setScreen(null)} className="hover:text-ink">
+              Close
+            </button>
+          </div>
+          <div className="px-4 py-3 text-sm">
+            <p className="text-xs text-muted">To: {screen.to}</p>
+            <p className="mt-1 font-semibold">{screen.subject}</p>
+            <p className="mt-2 min-h-[120px] whitespace-pre-line text-ink/85">
+              {screen.body.slice(0, screen.shown)}
+              {screen.shown < screen.body.length && <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-ink align-middle" />}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* leads dashboard */}
       <aside className="card absolute bottom-28 right-5 top-24 flex w-[400px] flex-col overflow-hidden">
