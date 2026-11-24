@@ -1,4 +1,4 @@
-import { loadTeam, teamTurn } from "@/lib/agents/team";
+import { loadTeam, teamSetup, teamTurn } from "@/lib/agents/team";
 import { writeEvents } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -10,7 +10,8 @@ export async function GET() {
 
 /** Talk to your team. The right teammate answers and does the work. */
 export async function POST(req: Request) {
-  const { text, player, offering } = (await req.json()) as { text?: string; player?: string; offering?: string };
+  const { text, player, offering, setupUrl } = (await req.json()) as { text?: string; player?: string; offering?: string; setupUrl?: string };
+  if (setupUrl?.trim()) return Response.json(await teamSetup(setupUrl.trim(), (player || "there").trim()));
   if (!text?.trim()) return Response.json({ error: "say something" }, { status: 400 });
   const r = await teamTurn(text.trim(), (player || "You").trim(), offering);
   await writeEvents([

@@ -32,7 +32,7 @@ type Lead = {
   foundBy: string;
   at: string;
 };
-type TeamState = { offering: string; leads: Lead[]; chat: { who: string; text: string; at: string }[] };
+type TeamState = { offering: string; company?: string; url?: string; icp?: string; leads: Lead[]; chat: { who: string; text: string; at: string }[] };
 type Reply = { speaker: string; line: string; found?: Lead[]; email?: Lead; state: TeamState };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -56,6 +56,8 @@ export default function TeamRoom() {
   const [fresh, setFresh] = useState<string[]>([]);
   const [gestures, setGestures] = useState<Record<string, Gesture>>({});
   const [gestureUntil, setGestureUntil] = useState(0);
+  const [settingUp, setSettingUp] = useState<string | null>(null);
+  const [prefillUrl, setPrefillUrl] = useState("");
   const busyRef = useRef(false);
   const lastTalk = useRef(0);
 
@@ -65,8 +67,10 @@ export default function TeamRoom() {
       setState(t);
       setOffering(t.offering);
     });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- read saved name once on mount
+    /* eslint-disable react-hooks/set-state-in-effect -- read saved name and ?url once on mount */
     setMe(localStorage.getItem("dealroom-me") ?? "");
+    setPrefillUrl(new URLSearchParams(window.location.search).get("url") ?? "");
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   const send = useCallback(
@@ -100,6 +104,30 @@ export default function TeamRoom() {
     [me, offering],
   );
 
+  async function setup(url: string, name: string) {
+    setSettingUp(url.replace(/^https?:\/\/(www\.)?/, ""));
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const r = await api<Reply>("/api/team", { setupUrl: url, player: name });
+      setState(r.state);
+      setOffering(r.state.offering);
+      setSpeaker(r.speaker);
+      setCaption({ who: r.speaker, text: r.line });
+      if (r.found?.length) {
+        setFresh(r.found.map((l) => l.id));
+        setTimeout(() => setFresh([]), 6000);
+      }
+      const who = r.speaker;
+      speak(r.line, who, () => setSpeaker((cur) => (cur === who ? null : cur)));
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+      setSettingUp(null);
+      lastTalk.current = Date.now();
+    }
+  }
+
   // The team keeps working: when you go quiet, Maya brings in more leads on her own.
   useEffect(() => {
     if (!me || !offering) return;
@@ -129,29 +157,35 @@ export default function TeamRoom() {
 
   return (
     <main className="relative h-screen w-full overflow-hidden bg-paper">
-      {(!me || !offering) && (
+      {(!me || !state.url) && !settingUp && (
         <div className="absolute inset-0 z-50 grid place-items-center bg-paper/80 backdrop-blur">
           <form
             onSubmit={(e) => {
               e.preventDefault();
               const n = (e.currentTarget.elements.namedItem("n") as HTMLInputElement).value.trim();
-              const o = (e.currentTarget.elements.namedItem("o") as HTMLInputElement).value.trim();
-              if (!n || !o) return;
+              const u = (e.currentTarget.elements.namedItem("u") as HTMLInputElement).value.trim();
+              if (!n || !u) return;
               localStorage.setItem("dealroom-me", n);
               setMe(n);
-              setOffering(o);
+              void setup(u, n);
             }}
             className="card w-[min(460px,90vw)] p-6"
           >
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Your team room</p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight">Maya, Arjun and Elena are ready.</h2>
-            <p className="mt-2 text-sm text-muted">Tell them who you are and what you sell. Then just talk: they find leads, write the emails and keep the pipeline moving.</p>
+            <p className="mt-2 text-sm text-muted">Enter your company website. Maya researches you, works out who buys from you, and starts finding leads. Then just talk to the team.</p>
             <input name="n" defaultValue={me} placeholder="Your name" className="mt-4 w-full rounded-full border border-line bg-white px-5 py-3 outline-none focus:border-ink" />
-            <input name="o" defaultValue={offering} placeholder="What you sell, in one line" className="mt-2 w-full rounded-full border border-line bg-white px-5 py-3 outline-none focus:border-ink" />
+            <input name="u" defaultValue={prefillUrl} placeholder="Your company website, e.g. yourcompany.com" className="mt-2 w-full rounded-full border border-line bg-white px-5 py-3 outline-none focus:border-ink" />
             <button className="pill-dark mt-3">
               Walk in <span className="arrow">→</span>
             </button>
           </form>
+        </div>
+      )}
+      {settingUp && (
+        <div className="card rise absolute left-1/2 top-24 z-40 w-[min(520px,80vw)] -translate-x-1/2 px-6 py-4 text-center">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Maya is on it</p>
+          <p className="mt-1 font-semibold">Researching {settingUp} with Telem, working out your ideal customer, then finding leads…</p>
         </div>
       )}
 
@@ -175,7 +209,7 @@ export default function TeamRoom() {
           <Link href="/" className="flex items-center gap-2 font-semibold">
             <span className="h-2 w-2 rounded-full bg-accent" /> Team room
           </Link>
-          <span className="max-w-[340px] truncate text-sm text-muted">{offering}</span>
+          <span className="max-w-[420px] truncate text-sm text-muted">{state.company ? `${state.company} · ` : ""}{state.icp ? `selling to ${state.icp}` : offering}</span>
         </div>
         <div className="pointer-events-auto flex gap-2">
           <Link href="/deals" className="card px-4 py-2.5 text-sm">

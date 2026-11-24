@@ -67,16 +67,15 @@ export function Hero() {
             <span className="h-1.5 w-1.5 rounded-full bg-accent" /> Humans and AI executives in one room
           </p>
           <h1 className="max-w-[680px] text-5xl font-semibold leading-none tracking-[-0.04em] text-balance md:text-7xl">
-            Your team vs. the <span className="text-accent">committee</span>.
+            Your AI sales team, <span className="text-accent">in one room</span>.
           </h1>
           <p className="mt-6 max-w-[520px] text-lg text-muted text-pretty">
-            Paste a prospect’s website. Three AI executives, built from live research on that company, sit in one room with you and your
-            teammate. They check your numbers, whisper, pick sides, trade, turn on you, and act on their own when you go quiet. Then they vote.
+            Enter your company website. Maya researches you and finds companies that buy what you sell, Arjun writes the outreach, Elena tracks every lead. Talk to them by name, and book the meeting when a lead is ready: an AI buying committee from that company is waiting.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-6">
             <HeroForm />
-            <Link href="/team" className="text-sm font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink">
-              Or walk into your team room: they find the leads for you →
+            <Link href="/deals" className="text-sm font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink">
+              See the pipeline →
             </Link>
           </div>
           <ul className="mt-10 flex flex-wrap gap-2 text-sm text-muted">

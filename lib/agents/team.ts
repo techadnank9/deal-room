@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { arr, enm, llmJSON, obj, str } from "../llm";
 import { kvGet, kvSet } from "../db";
-import { searchWeb } from "../sponsors/telem";
+import { researchSeller, searchWeb } from "../sponsors/telem";
 import { enrichCompany } from "../sponsors/glasser";
 import { buildPipeline } from "../pipeline";
 
@@ -26,7 +26,7 @@ export type Lead = {
   foundBy: string;
   at: string;
 };
-export type TeamState = { offering: string; leads: Lead[]; chat: { who: string; text: string; at: string }[] };
+export type TeamState = { offering: string; company?: string; url?: string; icp?: string; queries?: string[]; leads: Lead[]; chat: { who: string; text: string; at: string }[] };
 
 const KEY = "team-state";
 export async function loadTeam(): Promise<TeamState> {
@@ -58,7 +58,7 @@ export async function teamTurn(text: string, player: string, offeringInput?: str
   const { data: plan } = await llmJSON<{ agent: TeamId; action: "find_leads" | "draft_email" | "pipeline" | "chat"; query: string; company: string }>({
     label: "team-route",
     maxTokens: 300,
-    system: `Route the seller's request to one teammate. Teammates: ${TEAM.map((m) => `${m.id}=${m.name} (${m.role}: ${m.does})`).join("; ")}. If the seller names a teammate, pick them. action: find_leads (search the web for new prospect companies; query = a web search query for companies that match who would buy what we sell, include the segment the seller asked for), draft_email (company = which lead), pipeline (status update on leads and deals), chat (anything else).`,
+    system: `Our company: ${t.company ?? "?"}. Ideal customer: ${t.icp ?? "unknown"}. Route the seller's request to one teammate. Teammates: ${TEAM.map((m) => `${m.id}=${m.name} (${m.role}: ${m.does})`).join("; ")}. If the seller names a teammate, pick them. action: find_leads (search the web for new prospect companies; query = a web search query for companies that match who would buy what we sell, include the segment the seller asked for), draft_email (company = which lead), pipeline (status update on leads and deals), chat (anything else).`,
     user: `We sell: ${t.offering || "(not said yet)"}\nKnown leads: ${leadNames}\nSeller says: "${text}"`,
     schema: obj({ agent: enm(["cfo", "tech", "procurement"]), action: enm(["find_leads", "draft_email", "pipeline", "chat"]), query: str(), company: str() }),
     mock: () => ({
@@ -76,16 +76,21 @@ export async function teamTurn(text: string, player: string, offeringInput?: str
 
   if (plan.action === "find_leads") {
     // 2. Telem search for prospects, LLM picks real companies, Glasser enriches them.
-    const { sources } = await searchWeb(plan.query || `${t.offering} companies`);
-    const { data } = await llmJSON<{ leads: { company: string; domain: string; why: string; sourceUrl: string }[]; say: string }>({
+    const { sources } = await searchWeb(plan.query || t.queries?.[0] || `${t.offering} companies`);
+    const { data } = await llmJSON<{ leads: { company: string; domain: string; why: string; sourceUrl: string; sellsSameKindOfProduct?: boolean }[]; say: string }>({
       label: "team-leads",
       maxTokens: 1500,
-      system: `You are ${me.name}, lead researcher on a sales team. From the search results, pick up to 5 REAL companies (not media sites, not directories, not the search result publishers) that would plausibly buy what we sell. domain = the company's own website domain. why = one specific reason from the results. sourceUrl = the result URL it came from. Skip companies already in the lead list. say = 1-2 natural spoken sentences to the seller (first name ${player}) about what you found.`,
-      user: `We sell: ${t.offering || "(unknown)"}\nAlready have: ${leadNames}\nSearch results (Telem):\n${sources.map((x, i) => `[${i + 1}] ${x.title} ${x.url}\n${x.snippet.slice(0, 400)}`).join("\n\n") || "(none)"}`,
-      schema: obj({ leads: arr(obj({ company: str(), domain: str(), why: str(), sourceUrl: str() })), say: str() }),
+      system: `You are ${me.name}, lead researcher on a sales team. From the search results, pick up to 5 REAL companies that would BUY what we sell (they have the problem we solve). NEVER pick our own company, and NEVER pick competitors or vendors that sell the same kind of product as us; skip media sites, directories, review sites and agencies. domain = the company's own website domain. why = one specific reason from the results. sourceUrl = the result URL it came from. Skip companies already in the lead list. say = 1-2 natural spoken sentences to the seller (first name ${player}) about the buyers you found (do not mention competitors).`,
+      user: `Our company: ${t.company ?? "?"} (${t.url ?? ""})\nWe sell: ${t.offering || "(unknown)"}\nIdeal customer: ${t.icp ?? "unknown"}\nAlready have: ${leadNames}\nSearch results (Telem):\n${sources.map((x, i) => `[${i + 1}] ${x.title} ${x.url}\n${x.snippet.slice(0, 400)}`).join("\n\n") || "(none)"}`,
+      schema: obj({ leads: arr(obj({ company: str(), domain: str(), why: str(), sourceUrl: str(), sellsSameKindOfProduct: { type: "boolean", description: "true if this company is a vendor/agency/tool in our own category (a competitor), not a buyer" } })), say: str() }),
       mock: () => ({ leads: [], say: `${player}, I couldn't reach live search right now.` }),
     });
-    const fresh = data.leads.filter((l) => l.company && !t.leads.some((x) => x.company.toLowerCase() === l.company.toLowerCase())).slice(0, 5);
+    const ours = (t.url ? domainOf(t.url) : "").split(".")[0];
+    const fresh = data.leads
+      .filter((l) => !l.sellsSameKindOfProduct)
+      .filter((l) => l.company && !t.leads.some((x) => x.company.toLowerCase() === l.company.toLowerCase()))
+      .filter((l) => !ours || (!domainOf(l.domain || "").startsWith(ours) && !l.company.toLowerCase().replace(/\s/g, "").includes(ours)))
+      .slice(0, 5);
     const enriched = await Promise.all(
       fresh.map(async (l, i) => {
         const domain = domainOf(l.domain || l.company);
@@ -141,4 +146,25 @@ export async function teamTurn(text: string, player: string, offeringInput?: str
   t.chat.push({ who: me.id, text: line, at: new Date().toISOString() });
   await saveTeam(t);
   return { speaker: me.id, line, found, email, state: t };
+}
+
+/** You enter your company URL: Maya researches you with Telem, works out what you sell and who buys it, then goes hunting. */
+export async function teamSetup(url: string, player: string): Promise<TeamReply> {
+  const research = await researchSeller(url, "");
+  const domain = domainOf(url);
+  const { data } = await llmJSON<{ company: string; offering: string; icp: string; queries: string[]; say: string }>({
+    label: "team-setup",
+    maxTokens: 900,
+    system: `You are Maya, lead researcher joining ${player}'s sales team. From the research about their own company, work out: company name; offering (what they sell, one line); icp (who buys it: industry, size, stage, buyer role, one line); queries (3 web search queries that surface specific BUYER companies matching the ICP. Do NOT put our product category words in the query (e.g. for a QA tool do not say "QA" or "testing"; search "SaaS startup raises Series B 2026" instead), otherwise the results are all competitors: search for buying signals such as funding rounds, hiring for the role that has the problem, or launches, e.g. "SaaS startup raises Series B 2026 hiring QA engineers"); say (2 natural spoken sentences to ${player}: what you understood they sell and who you'll go after).`,
+    user: `Company website: ${url}\nResearch (Telem):\n${research.sources.map((x, i) => `[${i + 1}] ${x.title} ${x.url}\n${x.snippet.slice(0, 500)}`).join("\n\n") || "(none)"}`,
+    schema: obj({ company: str(), offering: str(), icp: str(), queries: arr(str()), say: str() }),
+    mock: () => ({ company: domain, offering: `${domain}'s product`, icp: "B2B software companies", queries: [`${domain} competitors customers`], say: `${player}, I looked at ${domain}. I'll start finding companies that look like your customers.` }),
+  });
+  const t: TeamState = { offering: data.offering, company: data.company, url, icp: data.icp, queries: data.queries, leads: [], chat: [] };
+  const prev = await loadTeam();
+  if (prev.url === url) t.leads = prev.leads; // same company: keep its leads
+  t.chat.push({ who: "cfo", text: data.say, at: new Date().toISOString() });
+  await saveTeam(t);
+  const hunt = await teamTurn(`Maya, find leads that match our ideal customer: ${data.icp}`, player);
+  return { ...hunt, line: `${data.say} ${hunt.line}` };
 }
