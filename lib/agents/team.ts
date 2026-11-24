@@ -54,7 +54,20 @@ export type TeamState = {
 
 const KEY = "team-state";
 export async function loadTeam(): Promise<TeamState> {
-  return (await kvGet<TeamState>(KEY)) ?? { offering: "", leads: [], chat: [] };
+  const t = (await kvGet<TeamState>(KEY)) ?? { offering: "", leads: [], chat: [] };
+  for (const l of t.leads) {
+    if (l.email) l.email = { subject: clean(l.email.subject, t), body: clean(l.email.body, t) };
+    if (l.meeting) l.meeting = { ...l.meeting, subject: clean(l.meeting.subject, t), invite: clean(l.meeting.invite, t) };
+  }
+  return t;
+}
+
+/** No template placeholders ever reach the seller: [Your Company] becomes the real name, other [..] slots are dropped. */
+function clean(text: string, t: Pick<TeamState, "company">) {
+  return text
+    .replace(/\[(your|our|my)?\s*company( name)?\]/gi, t.company ?? "our team")
+    .replace(/\s*\[[^\]\n]{1,40}\]/g, "")
+    .replace(/ from ,/g, ",");
 }
 async function saveTeam(t: TeamState) {
   t.chat = t.chat.slice(-60);
@@ -146,7 +159,8 @@ export async function teamTurn(
   offeringInput?: string,
 ): Promise<TeamReply> {
   const t = await loadTeam();
-  if (offeringInput?.trim()) t.offering = offeringInput.trim();
+  // Setup (your URL) is the source of truth; a typed offering only fills in when setup never ran.
+  if (offeringInput?.trim() && !t.company) t.offering = offeringInput.trim();
   t.chat.push({ who: player, text, at: new Date().toISOString() });
 
   // 1. Who should handle it, and what do they do.
@@ -341,7 +355,7 @@ export async function teamTurn(
           say: `Drafted the email to ${lead.company}.`,
         }),
       });
-      lead.email = { subject: data.subject, body: data.body };
+      lead.email = { subject: clean(data.subject, t), body: clean(data.body, t) };
       lead.status = lead.status === "new" ? "contacted" : lead.status;
       email = lead;
       line = data.say;
