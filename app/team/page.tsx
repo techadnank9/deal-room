@@ -194,7 +194,7 @@ export default function TeamRoom() {
     busyRef.current = true;
     setBusy(true);
     try {
-      const r = await api<Reply>("/api/team", { setupUrl: url, player: name });
+      const r = await api<Reply>("/api/team", { setupUrl: url, player: name, quick: true });
       setState(r.state);
       setOffering(r.state.offering);
       if (r.found?.length) {
@@ -206,22 +206,33 @@ export default function TeamRoom() {
       busyRef.current = false;
       setBusy(false);
       setSettingUp(null);
-      lastTalk.current = Date.now();
+      lastAuto.current = 0; // the team starts hunting immediately
     }
   }
 
-  // The team keeps working: when you go quiet, Maya brings in more leads on her own.
+  // The team never waits for you: between your requests they keep finding leads and writing emails.
+  const lastAuto = useRef(0);
+  const angle = useRef(0);
   useEffect(() => {
-    if (!me || !offering) return;
+    if (!me || !state?.url) return;
+    const ANGLES = ["companies that just raised funding", "companies hiring for the role that has this problem", "companies that just launched a new product", "fast-growing companies in our ideal customer segment", "companies expanding into new markets"];
     const t = setInterval(() => {
-      if (busyRef.current || pendingUser.current > 0 || Date.now() - lastTalk.current < 25000) return;
-      lastTalk.current = Date.now();
-      const next = state?.leads.find((l) => !l.email);
-      if (next) void send(`Arjun, draft an email for ${next.company}.`, true);
-      else if ((state?.leads.length ?? 0) < 25) void send("Maya, keep going: find a few more leads like the best ones we have.", true);
-    }, 10000);
+      if (busyRef.current || pendingUser.current > 0 || Date.now() - lastAuto.current < 4000) return;
+      lastAuto.current = Date.now();
+      const leads = state?.leads ?? [];
+      const next = leads.find((l) => !l.email);
+      const turn = angle.current + (next ? 0 : 1);
+      // Maya and Arjun take turns: two emails, then another search, until there are 40 leads.
+      if (leads.length < 6 || (leads.length < 40 && (!next || turn % 3 === 2))) {
+        const a = ANGLES[angle.current++ % ANGLES.length];
+        void send(`Maya, find more buyers: ${a}.`, true);
+      } else if (next) {
+        angle.current++;
+        void send(`Arjun, draft an email for ${next.company}.`, true);
+      }
+    }, 1500);
     return () => clearInterval(t);
-  }, [me, offering, state, send]);
+  }, [me, state, send]);
 
   useEffect(() => {
     if (!screen || screen.shown >= screen.body.length) return;

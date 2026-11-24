@@ -420,6 +420,7 @@ export async function teamTurn(
 export async function teamSetup(
   url: string,
   player: string,
+  hunt = true,
 ): Promise<TeamReply> {
   url = await resolveCompanyUrl(url);
   const research = await researchSeller(url, "");
@@ -467,11 +468,13 @@ export async function teamSetup(
   t.chat.push({ who: "cfo", text: data.say, at: new Date().toISOString() });
   await saveTeam(t, { replace: true });
   await pruneCompetitors();
-  const hunt = await teamTurn(
+  // quick setup: return as soon as Maya knows the company; the page starts the hunt right away.
+  if (!hunt) return { speaker: "cfo", line: data.say, state: await loadTeam() };
+  const found = await teamTurn(
     `Maya, find leads that match our ideal customer: ${data.icp}`,
     player,
   );
-  return { ...hunt, line: `${data.say} ${hunt.line}` };
+  return { ...found, line: `${data.say} ${found.line}` };
 }
 
 /** Remove any stored lead that sells what we sell (competitors are never leads). */
