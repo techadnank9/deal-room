@@ -1,3 +1,4 @@
+import HeroForm from "./HeroForm";
 import Link from "next/link";
 import {
   DecisionLogCard,
@@ -73,7 +74,7 @@ export function Hero() {
             teammate. They check your numbers, whisper, pick sides, trade, turn on you, and act on their own when you go quiet. Then they vote.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-6">
-            <Cta />
+            <HeroForm />
             <Link href="/deals" className="text-sm font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink">
               See the pipeline
             </Link>

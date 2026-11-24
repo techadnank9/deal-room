@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ModelPicker from "@/components/ModelPicker";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -28,6 +28,10 @@ export default function Setup() {
 
   async function start(e: React.FormEvent) {
     e.preventDefault();
+    await run(url, offering);
+  }
+
+  async function run(url: string, offering: string) {
     setBusy(true);
     setErr("");
     try {
@@ -38,6 +42,24 @@ export default function Setup() {
       setBusy(false);
     }
   }
+  // Prefill from the landing hero (?url=&offering=&go=1) and start right away when both are given.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time prefill from the URL */
+    const q = new URLSearchParams(window.location.search);
+    const u = q.get("url") ?? "";
+    const o = q.get("offering") ?? "";
+    if (u) setUrl(u);
+    if (o) setOffering(o);
+    if (u && o && q.get("go") === "1" && !autoStarted.current) {
+      autoStarted.current = true;
+      void run(u, o);
+    }
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+
 
   return (
     <main className="glow relative flex min-h-screen w-full flex-col">
