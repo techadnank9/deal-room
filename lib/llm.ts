@@ -25,7 +25,7 @@ export function withModel<T>(model: string | undefined, fn: () => Promise<T>): P
 export function defaultModel() {
   if (process.env.LLM_MODEL) return process.env.LLM_MODEL;
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "claude-haiku-5-5";
-  return process.env.OPENAI_MODEL || "gpt-6.2-sol";
+  return "gpt-6.2-sol"; // best default; LLM_MODEL or the per-session picker overrides it
 }
 
 export function currentModel() {
