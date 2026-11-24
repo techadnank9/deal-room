@@ -12,10 +12,10 @@ import {
 } from "./Mocks";
 import { Reveal, TaglineReveal } from "./Reveal";
 
-function Cta({ children = "Start a meeting" }: { children?: React.ReactNode }) {
+function Cta({ children = "Enter your team room" }: { children?: React.ReactNode }) {
   return (
     <Link
-      href="/new"
+      href="/team"
       className="pill-dark text-base font-semibold outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 active:scale-[0.98]"
     >
       {children}
@@ -47,10 +47,10 @@ export function Nav() {
             History
           </Link>
           <Link
-            href="/new"
+            href="/team"
             className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white transition-transform duration-300 hover:-translate-y-px active:scale-[0.98]"
           >
-            Start
+            Team room
           </Link>
         </div>
       </nav>
@@ -75,8 +75,8 @@ export function Hero() {
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-6">
             <HeroForm />
-            <Link href="/deals" className="text-sm font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink">
-              See the pipeline
+            <Link href="/team" className="text-sm font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink">
+              Or walk into your team room: they find the leads for you →
             </Link>
           </div>
           <ul className="mt-10 flex flex-wrap gap-2 text-sm text-muted">

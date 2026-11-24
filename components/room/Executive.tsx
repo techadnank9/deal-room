@@ -345,7 +345,7 @@ export default function Executive(props: ExecutiveProps) {
   const walking = useWalker(props, group);
   const modelUrl = useCharacterModel(props.modelUrl);
   const fallback = <TailoredBody {...props} walking={walking} />;
-  return <group ref={group} position={initial.current}>
+  return <group ref={group} position={initial.current} scale={1.18}>
     {modelUrl ? <ModelBoundary key={modelUrl} fallback={fallback}><Suspense fallback={fallback}><GLBBody {...props} url={modelUrl} walking={walking} /></Suspense></ModelBoundary> : fallback}
     {props.showLabel !== false && <NameTag name={props.name} sub={`${props.role}${props.conviction !== undefined ? ` · ${props.conviction}` : ""}`} color={props.color} />}
   </group>;

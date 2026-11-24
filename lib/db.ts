@@ -34,6 +34,7 @@ create table if not exists events (
   status text, source_url text
 );
 create table if not exists sessions (id text primary key, state text not null, updated_at text not null);
+create table if not exists kv (k text primary key, v text not null);
 `;
 
 const PG_SCHEMA = `
@@ -49,6 +50,7 @@ create table if not exists events (
   status text, source_url text
 );
 create table if not exists sessions (id text primary key, state text not null, updated_at timestamptz not null default now());
+create table if not exists kv (k text primary key, v text not null);
 `;
 
 export const SQLITE_PATH = process.env.SQLITE_PATH || path.join(process.cwd(), "data", "dealroom.db");
@@ -151,4 +153,17 @@ export async function listSessions(): Promise<SessionState[]> {
   const d = await db();
   const rows = await d.all<{ state: string }>(`select state from sessions order by updated_at desc limit 50`);
   return rows.map((r) => JSON.parse(r.state) as SessionState);
+}
+
+/** Small JSON store (team leads, team chat). */
+export async function kvGet<T>(k: string): Promise<T | null> {
+  const d = await db();
+  const rows = await d.all<{ v: string }>(`select v from kv where k = ?`, [k]);
+  return rows[0] ? (JSON.parse(rows[0].v) as T) : null;
+}
+
+export async function kvSet(k: string, v: unknown) {
+  const d = await db();
+  if (d.kind === "pg") await d.exec(`insert into kv (k, v) values (?, ?) on conflict (k) do update set v = excluded.v`, [k, JSON.stringify(v)]);
+  else await d.exec(`insert or replace into kv (k, v) values (?, ?)`, [k, JSON.stringify(v)]);
 }
