@@ -178,6 +178,27 @@ export async function teamSetup(url: string, player: string): Promise<TeamReply>
   if (prev.url === url) t.leads = prev.leads; // same company: keep its leads
   t.chat.push({ who: "cfo", text: data.say, at: new Date().toISOString() });
   await saveTeam(t);
+  await pruneCompetitors();
   const hunt = await teamTurn(`Maya, find leads that match our ideal customer: ${data.icp}`, player);
   return { ...hunt, line: `${data.say} ${hunt.line}` };
+}
+
+/** Remove any stored lead that sells what we sell (competitors are never leads). */
+export async function pruneCompetitors(): Promise<string[]> {
+  const t = await loadTeam();
+  if (!t.leads.length) return [];
+  const { data } = await llmJSON<{ competitors: string[] }>({
+    label: "team-prune",
+    maxTokens: 400,
+    system: "List which of these companies are competitors of the seller: they sell a product or service in the same category (for a QA/testing tool, any QA, testing, test-automation or quality-engineering company or agency is a competitor). Return their names exactly as given; return [] if none.",
+    user: `Seller: ${t.company ?? ""} sells: ${t.offering}\nCompanies:\n${t.leads.map((l) => `${l.company}: ${l.why}`).join("\n")}`,
+    schema: obj({ competitors: arr(str()) }),
+    mock: () => ({ competitors: [] }),
+  });
+  const bad = new Set(data.competitors.map((c) => c.toLowerCase()));
+  const ours = (t.url ? domainOf(t.url) : "").split(".")[0];
+  const removed = t.leads.filter((l) => bad.has(l.company.toLowerCase()) || (ours && l.domain.startsWith(ours))).map((l) => l.company);
+  t.leads = t.leads.filter((l) => !removed.includes(l.company));
+  await saveTeam(t);
+  return removed;
 }

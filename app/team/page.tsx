@@ -299,7 +299,7 @@ export default function TeamRoom() {
       </aside>
 
       {live && (
-        <div className="rise pointer-events-none absolute inset-x-0 bottom-32 flex justify-center px-6">
+        <div className="rise pointer-events-none absolute bottom-32 left-72 right-[430px] flex justify-center px-6">
           <div className="max-w-2xl rounded-2xl bg-black/70 px-6 py-3 text-center text-white backdrop-blur">
             <span className="mr-2 text-sm font-semibold uppercase tracking-wide">{liveName}</span>
             <span className="text-lg leading-snug">{live.text}</span>
