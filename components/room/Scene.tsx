@@ -3,7 +3,12 @@
 
 import { Suspense, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
-import { ContactShadows, Environment, Lightformer, useTexture } from "@react-three/drei";
+import {
+  ContactShadows,
+  Environment,
+  Lightformer,
+  useTexture,
+} from "@react-three/drei";
 import * as THREE from "three";
 import Executive, { type ExecState } from "./Executive";
 import WallScreen from "./WallScreen";
@@ -11,7 +16,13 @@ import CameraRig from "./CameraRig";
 import { CHARACTER_MODELS } from "./models";
 import type { ClaimCheck, Gesture, Vote } from "@/lib/types";
 
-export type SceneExec = { id: string; name: string; role: string; color: string; conviction: number };
+export type SceneExec = {
+  id: string;
+  name: string;
+  role: string;
+  color: string;
+  conviction: number;
+};
 
 export type SceneProps = {
   execs: SceneExec[];
@@ -24,6 +35,8 @@ export type SceneProps = {
   check: ClaimCheck | null;
   analystBusy: boolean;
   backdropUrl?: string | null;
+  /** Floor-to-ceiling glass across the whole back wall, with no stats screen (team room). */
+  panorama?: boolean;
   /** Agent the human called by name: walks round the table to the front to talk to them. */
   approach?: string | null;
 };
@@ -37,32 +50,54 @@ const DOOR: [number, number] = [4.6, 1.8];
 const EXIT: [number, number] = [5.8, 1.8];
 const ANALYST_SPOT: [number, number] = [3.0, -2.3];
 
-function execTargets(p: SceneProps, id: string, i: number): { state: ExecState; target: [number, number]; facing: number } {
+function execTargets(
+  p: SceneProps,
+  id: string,
+  i: number,
+): { state: ExecState; target: [number, number]; facing: number } {
   const slot = SLOTS[id] ?? [i - 1, -1.6];
   const vote = p.votes?.find((v) => v.id === id);
   if (vote) {
     if (vote.vote === "buy") {
       const buyers = p.votes!.filter((v) => v.vote === "buy").map((v) => v.id);
       const k = buyers.indexOf(id as (typeof buyers)[number]);
-      return { state: "handshake", target: [(k - (buyers.length - 1) / 2) * 1.1, 1.3], facing: 0 };
+      return {
+        state: "handshake",
+        target: [(k - (buyers.length - 1) / 2) * 1.1, 1.3],
+        facing: 0,
+      };
     }
     return { state: "leaving", target: EXIT, facing: Math.PI / 2 };
   }
-  if (p.approach === id) return { state: p.speaker === id ? "speaking" : "listening", target: [slot[0] * 0.45, 1.05], facing: 0 };
+  if (p.approach === id)
+    return {
+      state: p.speaker === id ? "speaking" : "listening",
+      target: [slot[0] * 0.45, 1.05],
+      facing: 0,
+    };
   // Whispers turn heads only; nobody leaves their place at the table.
   const w = p.whispers.find((x) => x.from === id);
   if (w && SLOTS[w.to]) {
     const to = SLOTS[w.to];
     const side = Math.sign(slot[0] - to[0]) || 1;
-    return { state: "whispering", target: slot, facing: side > 0 ? -Math.PI / 2 : Math.PI / 2 };
+    return {
+      state: "whispering",
+      target: slot,
+      facing: side > 0 ? -Math.PI / 2 : Math.PI / 2,
+    };
   }
   if (p.whispers.some((x) => x.to === id)) {
     const from = p.whispers.find((x) => x.to === id)!.from;
     const side = Math.sign((SLOTS[from]?.[0] ?? 0) - slot[0]) || 1;
-    return { state: "whispering", target: slot, facing: side > 0 ? Math.PI / 2 : -Math.PI / 2 };
+    return {
+      state: "whispering",
+      target: slot,
+      facing: side > 0 ? Math.PI / 2 : -Math.PI / 2,
+    };
   }
   if (p.speaker === id) return { state: "speaking", target: slot, facing: 0 };
-  if (p.gestures[id] && p.gestures[id] !== "idle") return { state: "reacting", target: slot, facing: 0 };
+  if (p.gestures[id] && p.gestures[id] !== "idle")
+    return { state: "reacting", target: slot, facing: 0 };
   return { state: "listening", target: slot, facing: 0 };
 }
 
@@ -80,17 +115,18 @@ function useSkylineTexture() {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 1024, 512);
     let seed = 7;
-    const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
     for (let layer = 0; layer < 2; layer++) {
       ctx.fillStyle = layer === 0 ? "#3a3550" : "#1d1b2b";
-      for (let x = 0; x < 1024; ) {
+      for (let x = 0; x < 1024;) {
         const w = 30 + rnd() * 70;
         const h = (layer === 0 ? 120 : 60) + rnd() * (layer === 0 ? 220 : 180);
         ctx.fillRect(x, 512 - h, w, h);
         if (layer === 1) {
           ctx.fillStyle = "#f8d58a";
           for (let wy = 512 - h + 10; wy < 500; wy += 18)
-            for (let wx = x + 6; wx < x + w - 8; wx += 14) if (rnd() < 0.35) ctx.fillRect(wx, wy, 6, 8);
+            for (let wx = x + 6; wx < x + w - 8; wx += 14)
+              if (rnd() < 0.35) ctx.fillRect(wx, wy, 6, 8);
           ctx.fillStyle = "#1d1b2b";
         }
         x += w + 4;
@@ -107,7 +143,13 @@ function Backdrop({ url }: { url: string }) {
   return <meshBasicMaterial map={tex} toneMapped={false} />;
 }
 
-function Room({ backdropUrl }: { backdropUrl?: string | null }) {
+function Room({
+  backdropUrl,
+  panorama,
+}: {
+  backdropUrl?: string | null;
+  panorama?: boolean;
+}) {
   const skyline = useSkylineTexture();
   const wall = "#d9d4cc";
   return (
@@ -127,36 +169,72 @@ function Room({ backdropUrl }: { backdropUrl?: string | null }) {
         <planeGeometry args={[9, 9]} />
         <meshStandardMaterial color="#efece6" />
       </mesh>
-      {/* back = window wall */}
-      <mesh position={[-3.0, 1.8, -3.5]}>
-        <planeGeometry args={[3, 3.6]} />
-        <meshStandardMaterial color={wall} />
-      </mesh>
-      <mesh position={[1.5, 0.35, -3.5]}>
-        <planeGeometry args={[6, 0.7]} />
-        <meshStandardMaterial color={wall} />
-      </mesh>
-      <mesh position={[1.5, 3.35, -3.5]}>
-        <planeGeometry args={[6, 0.5]} />
-        <meshStandardMaterial color={wall} />
-      </mesh>
-      <mesh position={[1.5, 1.85, -3.52]}>
-        <planeGeometry args={[6, 2.3]} />
-        {backdropUrl ? (
-          <Suspense fallback={<meshBasicMaterial map={skyline} toneMapped={false} />}>
-            <Backdrop url={backdropUrl} />
-          </Suspense>
-        ) : (
-          <meshBasicMaterial map={skyline} toneMapped={false} />
-        )}
-      </mesh>
-      {/* window mullions */}
-      {[-1.5, 0, 1.5, 3, 4.5].map((x) => (
-        <mesh key={x} position={[x, 1.85, -3.48]}>
-          <boxGeometry args={[0.06, 2.3, 0.05]} />
-          <meshStandardMaterial color="#2a2a2a" />
-        </mesh>
-      ))}
+      {panorama ? (
+        <>
+          {/* back = one floor-to-ceiling window */}
+          <mesh position={[0, 1.8, -3.52]}>
+            <planeGeometry args={[9, 3.6]} />
+            {backdropUrl ? (
+              <Suspense
+                fallback={
+                  <meshBasicMaterial map={skyline} toneMapped={false} />
+                }
+              >
+                <Backdrop url={backdropUrl} />
+              </Suspense>
+            ) : (
+              <meshBasicMaterial map={skyline} toneMapped={false} />
+            )}
+          </mesh>
+          {[-3, -1.5, 0, 1.5, 3].map((x) => (
+            <mesh key={x} position={[x, 1.8, -3.48]}>
+              <boxGeometry args={[0.05, 3.6, 0.05]} />
+              <meshStandardMaterial color="#1c1c1c" />
+            </mesh>
+          ))}
+          <mesh position={[0, 0.04, -3.48]}>
+            <boxGeometry args={[9, 0.08, 0.06]} />
+            <meshStandardMaterial color="#1c1c1c" />
+          </mesh>
+        </>
+      ) : (
+        <>
+          {/* back = window wall */}
+          <mesh position={[-3.0, 1.8, -3.5]}>
+            <planeGeometry args={[3, 3.6]} />
+            <meshStandardMaterial color={wall} />
+          </mesh>
+          <mesh position={[1.5, 0.35, -3.5]}>
+            <planeGeometry args={[6, 0.7]} />
+            <meshStandardMaterial color={wall} />
+          </mesh>
+          <mesh position={[1.5, 3.35, -3.5]}>
+            <planeGeometry args={[6, 0.5]} />
+            <meshStandardMaterial color={wall} />
+          </mesh>
+          <mesh position={[1.5, 1.85, -3.52]}>
+            <planeGeometry args={[6, 2.3]} />
+            {backdropUrl ? (
+              <Suspense
+                fallback={
+                  <meshBasicMaterial map={skyline} toneMapped={false} />
+                }
+              >
+                <Backdrop url={backdropUrl} />
+              </Suspense>
+            ) : (
+              <meshBasicMaterial map={skyline} toneMapped={false} />
+            )}
+          </mesh>
+          {/* window mullions */}
+          {[-1.5, 0, 1.5, 3, 4.5].map((x) => (
+            <mesh key={x} position={[x, 1.85, -3.48]}>
+              <boxGeometry args={[0.06, 2.3, 0.05]} />
+              <meshStandardMaterial color="#2a2a2a" />
+            </mesh>
+          ))}
+        </>
+      )}
       {/* left wall */}
       <mesh position={[-4.5, 1.8, 0.5]} rotation-y={Math.PI / 2}>
         <planeGeometry args={[8, 3.6]} />
@@ -184,18 +262,30 @@ function Room({ backdropUrl }: { backdropUrl?: string | null }) {
         {[-1.1, 1.1].map((x) => (
           <mesh key={x} position={[x, 0.52, 0]} castShadow>
             <cylinderGeometry args={[0.05, 0.08, 1.04, 12]} />
-            <meshStandardMaterial color="#222" metalness={0.6} roughness={0.3} />
+            <meshStandardMaterial
+              color="#222"
+              metalness={0.6}
+              roughness={0.3}
+            />
           </mesh>
         ))}
         {/* laptop */}
         <group position={[0.2, 1.09, 0.15]} rotation-y={-0.2}>
           <mesh>
             <boxGeometry args={[0.42, 0.02, 0.3]} />
-            <meshStandardMaterial color="#9aa0a6" metalness={0.5} roughness={0.3} />
+            <meshStandardMaterial
+              color="#9aa0a6"
+              metalness={0.5}
+              roughness={0.3}
+            />
           </mesh>
           <mesh position={[0, 0.14, -0.15]} rotation-x={-0.25}>
             <boxGeometry args={[0.42, 0.28, 0.015]} />
-            <meshStandardMaterial color="#111" emissive="#1e3a8a" emissiveIntensity={0.4} />
+            <meshStandardMaterial
+              color="#111"
+              emissive="#1e3a8a"
+              emissiveIntensity={0.4}
+            />
           </mesh>
         </group>
         {/* cups */}
@@ -247,7 +337,10 @@ export default function Scene(p: SceneProps) {
   const focus = useMemo<[number, number] | null>(() => {
     if (p.votes || p.userTalking || !p.speaker) return null;
     if (p.approach && p.approach === p.speaker) {
-      const slot = p.approach === "analyst" ? ([1.6 / 0.45, 0] as [number, number]) : SLOTS[p.approach];
+      const slot =
+        p.approach === "analyst"
+          ? ([1.6 / 0.45, 0] as [number, number])
+          : SLOTS[p.approach];
       return slot ? ([slot[0] * 0.45, 1.05] as [number, number]) : null;
     }
     if (p.speaker === "analyst") return ANALYST_SPOT;
@@ -258,19 +351,47 @@ export default function Scene(p: SceneProps) {
     <Canvas shadows camera={{ position: [0, 2.6, 5.6], fov: 50 }} dpr={[1, 2]}>
       <color attach="background" args={["#f6f3ee"]} />
       <ambientLight intensity={0.55} />
-      <directionalLight position={[3, 5, 3]} intensity={1.5} color="#fff4e6" castShadow shadow-mapSize={[1024, 1024]} />
+      <directionalLight
+        position={[3, 5, 3]}
+        intensity={1.5}
+        color="#fff4e6"
+        castShadow
+        shadow-mapSize={[1024, 1024]}
+      />
       <Environment resolution={128}>
-        <Lightformer intensity={2} position={[0, 4, -1]} scale={[6, 2, 1]} rotation-x={Math.PI / 2} />
-        <Lightformer intensity={1.2} color="#f3c08a" position={[1.5, 1.8, -4]} scale={[6, 2.3, 1]} />
-        <Lightformer intensity={0.6} position={[-5, 2, 0]} scale={[4, 3, 1]} rotation-y={Math.PI / 2} />
+        <Lightformer
+          intensity={2}
+          position={[0, 4, -1]}
+          scale={[6, 2, 1]}
+          rotation-x={Math.PI / 2}
+        />
+        <Lightformer
+          intensity={1.2}
+          color="#f3c08a"
+          position={[1.5, 1.8, -4]}
+          scale={[6, 2.3, 1]}
+        />
+        <Lightformer
+          intensity={0.6}
+          position={[-5, 2, 0]}
+          scale={[4, 3, 1]}
+          rotation-y={Math.PI / 2}
+        />
       </Environment>
       <CameraRig focus={focus} />
-      <Room backdropUrl={p.backdropUrl} />
-      <WallScreen
-        position={[-2.95, 2.15, -3.46]}
-        bars={p.execs.map((e) => ({ id: e.id, label: e.name.split(" ")[0], color: e.color, value: e.conviction }))}
-        check={p.check}
-      />
+      <Room backdropUrl={p.backdropUrl} panorama={p.panorama} />
+      {!p.panorama && (
+        <WallScreen
+          position={[-2.95, 2.15, -3.46]}
+          bars={p.execs.map((e) => ({
+            id: e.id,
+            label: e.name.split(" ")[0],
+            color: e.color,
+            value: e.conviction,
+          }))}
+          check={p.check}
+        />
+      )}
       {p.execs.map((e, i) => {
         const t = execTargets(p, e.id, i);
         return (
@@ -298,7 +419,13 @@ export default function Scene(p: SceneProps) {
         name="Analyst"
         role="fact checks"
         color="#f472b6"
-        state={p.speaker === "analyst" ? "speaking" : p.analystBusy ? "reacting" : "listening"}
+        state={
+          p.speaker === "analyst"
+            ? "speaking"
+            : p.analystBusy
+              ? "reacting"
+              : "listening"
+        }
         target={p.approach === "analyst" ? [1.6, 1.05] : ANALYST_SPOT}
         facing={p.approach === "analyst" ? 0 : -0.5}
         gesture={p.analystBusy ? "nod" : "idle"}
@@ -307,7 +434,13 @@ export default function Scene(p: SceneProps) {
         startDelay={0}
         modelUrl={CHARACTER_MODELS.analyst}
       />
-      <ContactShadows position={[0, 0.01, 0]} opacity={0.5} scale={10} blur={2.5} far={4} />
+      <ContactShadows
+        position={[0, 0.01, 0]}
+        opacity={0.5}
+        scale={10}
+        blur={2.5}
+        far={4}
+      />
     </Canvas>
   );
 }

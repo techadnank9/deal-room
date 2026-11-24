@@ -292,6 +292,8 @@ export default function TeamRoom() {
           check={null}
           analystBusy={busy}
           approach={approach}
+          backdropUrl="/backdrops/coast-neon.jpg"
+          panorama
         />
       </div>
 
