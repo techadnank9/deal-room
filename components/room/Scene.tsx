@@ -143,6 +143,11 @@ function Backdrop({ url }: { url: string }) {
   return <meshBasicMaterial map={tex} toneMapped={false} />;
 }
 
+function MarbleMaterial() {
+  const tex = useTexture("/backdrops/table-marble.jpg");
+  return <meshStandardMaterial map={tex} roughness={0.18} metalness={0.05} />;
+}
+
 function Room({
   backdropUrl,
   panorama,
@@ -255,20 +260,56 @@ function Room({
       </mesh>
       {/* standing table */}
       <group position={[0, 0, -0.75]}>
-        <mesh position={[0, 1.05, 0]} castShadow receiveShadow>
-          <boxGeometry args={[2.8, 0.06, 1.0]} />
-          <meshStandardMaterial color="#3b2a1e" roughness={0.4} />
-        </mesh>
-        {[-1.1, 1.1].map((x) => (
-          <mesh key={x} position={[x, 0.52, 0]} castShadow>
-            <cylinderGeometry args={[0.05, 0.08, 1.04, 12]} />
-            <meshStandardMaterial
-              color="#222"
-              metalness={0.6}
-              roughness={0.3}
-            />
-          </mesh>
-        ))}
+        {panorama ? (
+          <>
+            {/* marble slab (Runware-generated texture) on brass panel legs */}
+            <mesh position={[0, 1.04, 0]} castShadow receiveShadow>
+              <boxGeometry args={[3.0, 0.08, 1.1]} />
+              <Suspense
+                fallback={
+                  <meshStandardMaterial color="#efece6" roughness={0.25} />
+                }
+              >
+                <MarbleMaterial />
+              </Suspense>
+            </mesh>
+            <mesh position={[0, 0.985, 0]}>
+              <boxGeometry args={[2.9, 0.03, 1.0]} />
+              <meshStandardMaterial
+                color="#b8913f"
+                metalness={0.9}
+                roughness={0.25}
+              />
+            </mesh>
+            {[-1.15, 1.15].map((x) => (
+              <mesh key={x} position={[x, 0.49, 0]} castShadow>
+                <boxGeometry args={[0.07, 0.98, 0.8]} />
+                <meshStandardMaterial
+                  color="#b8913f"
+                  metalness={0.9}
+                  roughness={0.25}
+                />
+              </mesh>
+            ))}
+          </>
+        ) : (
+          <>
+            <mesh position={[0, 1.05, 0]} castShadow receiveShadow>
+              <boxGeometry args={[2.8, 0.06, 1.0]} />
+              <meshStandardMaterial color="#3b2a1e" roughness={0.4} />
+            </mesh>
+            {[-1.1, 1.1].map((x) => (
+              <mesh key={x} position={[x, 0.52, 0]} castShadow>
+                <cylinderGeometry args={[0.05, 0.08, 1.04, 12]} />
+                <meshStandardMaterial
+                  color="#222"
+                  metalness={0.6}
+                  roughness={0.3}
+                />
+              </mesh>
+            ))}
+          </>
+        )}
         {/* laptop */}
         <group position={[0.2, 1.09, 0.15]} rotation-y={-0.2}>
           <mesh>
