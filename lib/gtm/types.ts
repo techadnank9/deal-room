@@ -1,0 +1,111 @@
+// GTM Engine data model, layered onto the team room's leads and state.
+
+export type Stage = "matched" | "contacted" | "replied" | "meeting" | "won" | "lost";
+export const STAGES: { key: Stage; label: string }[] = [
+  { key: "matched", label: "Matched" },
+  { key: "contacted", label: "Contacted" },
+  { key: "replied", label: "Replied" },
+  { key: "meeting", label: "Meeting booked" },
+  { key: "won", label: "Closed won" },
+  { key: "lost", label: "Closed lost" },
+];
+
+export type Actor = "agent" | "rep";
+
+export type Contact = {
+  id: string;
+  name: string;
+  title: string;
+  email?: string;
+  emailStatus: "mx-valid" | "no-mx" | "guessed" | "unknown";
+  linkedin?: string;
+  previousCompanies?: string[];
+  source: "glasser" | "inferred";
+  confidence: number;
+};
+
+export type Signal = { kind: "funding" | "hiring" | "launch" | "exec_hire" | "tech_change" | "expansion" | "other"; text: string; sourceUrl?: string };
+
+export type Touch = {
+  id: string;
+  step: number;
+  channel: "email" | "linkedin";
+  variant: "A" | "B";
+  to?: string;
+  subject?: string;
+  body: string;
+  dayOffset: number;
+  approval: "pending" | "approved" | "rejected";
+  edited?: boolean;
+  draftedBy: string;
+  decidedAt?: string;
+  sentAt?: string;
+  citations?: string[];
+};
+
+export type StageEvent = { at: string; stage: Stage; actor: Actor; who: string; note?: string };
+
+export type LeadGtm = {
+  stage?: Stage;
+  industry?: string;
+  hq?: string;
+  fit?: number;
+  intent?: number;
+  score?: number;
+  tier?: "A" | "B" | "C";
+  scoreWhy?: string;
+  signals?: Signal[];
+  contacts?: Contact[];
+  sequence?: Touch[];
+  history?: StageEvent[];
+  enriched?: "done" | "blocked" | "failed";
+  enrichedAt?: string;
+};
+
+export type Confident<T> = T & { confidence: number };
+export type Expansion = { id: string; segment: string; reasoning: string; evidence: string; status: "suggested" | "accepted" | "dismissed" };
+
+export type IcpSpec = {
+  summary: string;
+  industries: Confident<{ name: string; naics: string }>[];
+  companySize: Confident<{ headcount: string; revenue: string }>;
+  personas: Confident<{ title: string; seniority: string; function: string }>[];
+  triggers: Confident<{ event: string }>[];
+  regions: Confident<{ name: string }>[];
+  negativeSignals: string[];
+  expansions: Expansion[];
+  generatedAt: string;
+};
+
+export type Competitor = {
+  name: string;
+  domain: string;
+  category: "direct" | "indirect" | "alternative";
+  positioning: string;
+  pricing: string;
+  theirEdge: string;
+  ourEdge: string;
+  sourceUrl: string;
+};
+
+export type Activity = {
+  id: string;
+  at: string;
+  actor: Actor;
+  who: string;
+  kind: "think" | "search" | "graph" | "enrich" | "draft" | "approve" | "reject" | "stage" | "billing" | "icp" | "discover";
+  text: string;
+  leadId?: string;
+  ms?: number;
+};
+
+export type Intake = { product: string; customers: string; pricing: string; constraints: string };
+
+export type TeamGtm = {
+  /** The rep's first name (from the team room); outreach is signed by them, not by the agent. */
+  rep?: string;
+  intake?: Intake;
+  icpSpec?: IcpSpec;
+  competitors?: Competitor[];
+  activity?: Activity[];
+};

@@ -41,7 +41,7 @@ export type Lead = {
   meeting?: { when: string; start: string; subject: string; invite: string };
   foundBy: string;
   at: string;
-};
+} & import("../gtm/types").LeadGtm;
 export type TeamState = {
   offering: string;
   company?: string;
@@ -52,7 +52,7 @@ export type TeamState = {
   chat: { who: string; text: string; at: string }[];
   /** Companies the seller marked "not a buyer" (competitors, wrong fit). Maya never suggests them again. */
   excluded?: string[];
-};
+} & import("../gtm/types").TeamGtm;
 
 // Every company gets its own room: requests run inside withCompany(domain), and load/save use that company's key.
 const companyScope = new AsyncLocalStorage<string>();
@@ -85,7 +85,7 @@ const RANK = { new: 0, contacted: 1, meeting: 2 } as const;
  * Save without losing work from requests that ran at the same time (you talking while a teammate works):
  * merge with what is stored now. `replace` is for setup and pruning, where dropping leads is the point.
  */
-async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
+export async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
   const cur = opts.replace ? null : await kvGet<TeamState>(key());
   if (cur && cur.url === t.url) {
     const mine = new Map(t.leads.map((l) => [l.id, l]));
@@ -97,11 +97,17 @@ async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
       }
       l.email ??= old.email;
       l.meeting ??= old.meeting;
+      for (const k of Object.keys(old) as (keyof Lead)[]) if (l[k] === undefined) (l as Record<string, unknown>)[k] = old[k];
       if (RANK[old.status] > RANK[l.status]) l.status = old.status;
     }
     const seen = new Set(t.chat.map((c) => `${c.at}|${c.who}|${c.text}`));
     t.chat.push(...cur.chat.filter((c) => !seen.has(`${c.at}|${c.who}|${c.text}`)));
     t.chat.sort((x, y) => x.at.localeCompare(y.at));
+    const seenA = new Set((t.activity ?? []).map((a) => a.id));
+    t.activity = [...(t.activity ?? []), ...(cur.activity ?? []).filter((a) => !seenA.has(a.id))].sort((x, y) => y.at.localeCompare(x.at)).slice(0, 300);
+    t.icpSpec ??= cur.icpSpec;
+    t.competitors ??= cur.competitors;
+    t.intake ??= cur.intake;
     t.leads.sort((x, y) => y.at.localeCompare(x.at));
   }
   t.chat = t.chat.slice(-60);
@@ -181,6 +187,9 @@ export async function bookMeeting(
     invite: data.invite,
   };
   lead.status = "meeting";
+  lead.stage = "meeting";
+  lead.history = [...(lead.history ?? []), { at: new Date().toISOString(), stage: "meeting", actor: "agent", who: "Elena", note: when }];
+  t.activity = [{ id: randomUUID().slice(0, 10), at: new Date().toISOString(), actor: "agent" as const, who: "Elena", kind: "stage" as const, text: `${lead.company} → meeting booked for ${when}`, leadId: lead.id }, ...(t.activity ?? [])];
   t.chat.push({ who: me.id, text: data.say, at: new Date().toISOString() });
   await saveTeam(t);
   return { speaker: me.id, line: data.say, meeting: lead, state: t };
@@ -196,6 +205,7 @@ export async function teamTurn(
   // Setup (your URL) is the source of truth; a typed offering only fills in when setup never ran.
   if (offeringInput?.trim() && !t.company) t.offering = offeringInput.trim();
   t.chat.push({ who: player, text, at: new Date().toISOString() });
+  if (player && player !== "You") t.rep = player;
 
   // 1. Who should handle it, and what do they do.
   const leadNames = t.leads.map((l) => l.company).join(", ") || "none yet";
@@ -375,26 +385,15 @@ export async function teamTurn(
     if (!lead)
       line = `${player}, we don't have any leads yet. Ask Maya to find some first.`;
     else {
-      const { data } = await llmJSON<{
-        subject: string;
-        body: string;
-        say: string;
-      }>({
-        label: "team-email",
-        maxTokens: 800,
-        system: `You are ${me.name}, outreach on a sales team. Write a short, specific cold email (under 110 words) from ${player} to ${lead.company} using the reason we found. The sender works at ${t.company ?? "our company"}; name it, never write placeholders like [Your Company] or [Name]. No hype. Then say = one natural spoken sentence to ${player} saying the email is drafted and ready.${ACT}`,
-        user: `We sell: ${t.offering}\nLead: ${lead.company} (${lead.domain}). Why them: ${lead.why}${lead.size ? `. Size: ${lead.size}` : ""}${lead.funding ? `. Funding: ${lead.funding}` : ""}`,
-        schema: obj({ subject: str(), body: str(), say: str() }),
-        mock: () => ({
-          subject: `${lead.company} + us`,
-          body: `Hi ${lead.company} team,\n\n${lead.why}\n\nWorth a 20-minute call?\n\n${player}`,
-          say: `Drafted the email to ${lead.company}.`,
-        }),
-      });
-      lead.email = { subject: clean(data.subject, t), body: clean(data.body, t) };
-      lead.status = lead.status === "new" ? "contacted" : lead.status;
+      // Outreach goes through the approval queue (human in the loop): Arjun drafts, you approve before anything is sent.
+      await saveTeam(t);
+      const { draftSequence } = await import("../gtm/engine");
+      const after = await draftSequence(lead.id);
+      const done = after.leads.find((l) => l.id === lead.id);
+      Object.assign(t, { activity: after.activity });
+      if (done) Object.assign(lead, { email: done.email, sequence: done.sequence, contacts: done.contacts, signals: done.signals, score: done.score, tier: done.tier, enriched: done.enriched, fit: done.fit, intent: done.intent, stage: done.stage, history: done.history });
       email = lead;
-      line = data.say;
+      line = `${player}, I drafted a three-step sequence for ${lead.company}${done?.contacts?.[0] ? ` to ${done.contacts[0].name}` : ""}. It's in your approval queue; nothing goes out until you approve it.`;
     }
   } else {
     const meetings = t.leads.filter((l) => l.meeting);
@@ -413,6 +412,10 @@ export async function teamTurn(
 
   t.chat.push({ who: me.id, text: line, at: new Date().toISOString() });
   await saveTeam(t);
+  if (found?.length) {
+    const leads = found;
+    void import("../gtm/engine").then((m) => m.onLeadsFound(leads)).catch((e) => console.error("[gtm] onLeadsFound", e));
+  }
   return { speaker: me.id, line, found, email, state: t };
 }
 
@@ -459,6 +462,7 @@ export async function teamSetup(
     queries: data.queries,
     leads: [],
     chat: [],
+    rep: player && player !== "there" ? player : undefined,
   };
   const prev = await loadTeam();
   if (prev.url) {

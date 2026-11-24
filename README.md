@@ -17,6 +17,21 @@ Open http://localhost:3000. Hold **Space** to talk (Chrome), or type.
 
 Without `ANTHROPIC_API_KEY` the agents fall back to scripted heuristics so the app still runs end to end.
 
+## GTM Engine (HackwithBay 4.0)
+
+The team room doubles as an autonomous go-to-market engine: product intake → ICP with confidence scores → cited buyer
+discovery and competitor map → knowledge graph (warm intros, lookalikes, displacement) → credit-gated enrichment with
+MX-checked contacts → 3-touch sequences that wait in a human approval queue → Kanban pipeline with AI-vs-rep audit trail
+and conversion analytics. Open `/gtm?url=<your company>` (or "GTM Engine ↗" in the team room).
+
+- **Moss**: in-process semantic search over every lead, signal, person, competitor and message (single-digit ms).
+  Grounds Arjun's copy, finds lookalikes of your customers, powers the search box.
+- **Flexprice**: metered events (`lead_enriched` $0.50, `outreach_sent` $0.25, `graph_query` $0.02, `search_query` $0.01)
+  against a prepaid wallet; enrichment is blocked when the real-time balance runs out. One-time setup:
+  `node --env-file=.env.local scripts/flexprice-setup.mjs`.
+
+System design, data model, graph ontology, reasoning loops and demo script: [docs/gtm-engine.md](docs/gtm-engine.md).
+
 ## How it works
 
 ```

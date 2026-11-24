@@ -37,6 +37,7 @@ type Lead = {
   at: string;
 };
 type TeamState = {
+  icpSpec?: { summary: string };
   offering: string;
   company?: string;
   url?: string;
@@ -593,7 +594,7 @@ export default function TeamRoom() {
           </Link>
           <span className="max-w-[420px] truncate text-sm text-muted">
             {state.company ? `${state.company} · ` : ""}
-            {state.icp ? `selling to ${state.icp}` : offering}
+            {state.icp ? `selling to ${state.icpSpec?.summary ?? state.icp}` : offering}
           </span>
         </div>
         <div className="pointer-events-auto flex gap-2">
@@ -606,6 +607,13 @@ export default function TeamRoom() {
             className="card px-4 py-2.5 text-sm"
           >
             Open CRM ↗
+          </Link>
+          <Link
+            href={`/gtm${company ? `?url=${encodeURIComponent(company)}` : ""}`}
+            target="_blank"
+            className="card px-4 py-2.5 text-sm font-medium"
+          >
+            GTM Engine ↗
           </Link>
         </div>
       </div>

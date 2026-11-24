@@ -15,7 +15,7 @@ export type Enrichment = {
   funding?: string;
   techStack?: string[];
   likelyTitles?: string[];
-  people?: { name?: string; title?: string }[];
+  people?: { name?: string; title?: string; linkedin?: string; email?: string; previous?: string[] }[];
   industry?: string;
   city?: string;
   revenue?: string;
@@ -58,7 +58,7 @@ function fmtUsd(n: unknown) {
   return v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `$${Math.round(v / 1e6)}M` : `$${Math.round(v / 1e3)}K`;
 }
 
-export async function enrichCompany(domain: string): Promise<{ data: Enrichment; provider: string }> {
+export async function enrichCompany(domain: string, titles?: string[]): Promise<{ data: Enrichment; provider: string }> {
   if (!glasserEnabled()) {
     return {
       data: { employees: "unknown (mock)", funding: "unknown (mock)", techStack: [], likelyTitles: ["CFO", "VP Engineering", "Head of Procurement"] },
@@ -72,7 +72,7 @@ export async function enrichCompany(domain: string): Promise<{ data: Enrichment;
     runSolution("/v1/solutions/gtm/people_search", {
       action: "search",
       company_domain: domain,
-      job_titles: ["CFO", "VP Finance", "CTO", "VP Engineering", "Head of Procurement", "Procurement Manager"],
+      job_titles: titles?.length ? titles.slice(0, 8) : ["CFO", "VP Finance", "CTO", "VP Engineering", "Head of Procurement", "Procurement Manager"],
       limit: 10,
     }),
   ]);
@@ -100,6 +100,9 @@ export async function enrichCompany(domain: string): Promise<{ data: Enrichment;
     data.people = items.map((p) => ({
       name: (p.name ?? p.full_name ?? [p.first_name, p.last_name].filter(Boolean).join(" ")) as string | undefined,
       title: (p.title ?? p.job_title ?? p.headline) as string | undefined,
+      linkedin: (p.linkedin_url ?? p.linkedin ?? p.profile_url) as string | undefined,
+      email: (p.email ?? p.work_email) as string | undefined,
+      previous: (Array.isArray(p.experience) ? (p.experience as Record<string, unknown>[]).map((x) => String(x.company_name ?? x.company ?? "")).filter(Boolean) : Array.isArray(p.previous_companies) ? (p.previous_companies as string[]) : undefined)?.slice(0, 5),
     }));
     data.likelyTitles = [...new Set(data.people.map((p) => p.title).filter(Boolean) as string[])].slice(0, 6);
   }
