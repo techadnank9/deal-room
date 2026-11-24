@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { api, EXEC_COLOR } from "@/lib/ui";
 import { speak, stopSpeaking, useHandsFree, usePushToTalk } from "@/lib/voice";
 import type { Gesture } from "@/lib/types";
@@ -29,11 +28,12 @@ type Lead = {
   funding?: string;
   status: "new" | "contacted" | "meeting";
   email?: { subject: string; body: string };
+  meeting?: { when: string; start: string; subject: string; invite: string };
   foundBy: string;
   at: string;
 };
 type TeamState = { offering: string; company?: string; url?: string; icp?: string; leads: Lead[]; chat: { who: string; text: string; at: string }[] };
-type Reply = { speaker: string; line: string; found?: Lead[]; email?: Lead; state: TeamState };
+type Reply = { speaker: string; line: string; found?: Lead[]; email?: Lead; meeting?: Lead; state: TeamState };
 
 const STATUS_STYLE: Record<string, string> = {
   new: "bg-sky-100 text-sky-800",
@@ -42,7 +42,6 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export default function TeamRoom() {
-  const router = useRouter();
   const [state, setState] = useState<TeamState | null>(null);
   const [me, setMe] = useState("");
   const [offering, setOffering] = useState("");
@@ -60,6 +59,8 @@ export default function TeamRoom() {
   const [working, setWorking] = useState<{ who: string; task: string } | null>(null);
   const [screen, setScreen] = useState<{ who: string; to: string; subject: string; body: string; shown: number } | null>(null);
   const [prefillUrl, setPrefillUrl] = useState("");
+  const [mini, setMini] = useState(false);
+  const [booking, setBooking] = useState<string | null>(null);
   const busyRef = useRef(false);
   const lastTalk = useRef(0);
 
@@ -165,9 +166,34 @@ export default function TeamRoom() {
   const ptt = usePushToTalk((said) => void send(said), !!me && !busy && !typing && !handsFree);
   const hf = useHandsFree((said) => void send(said), handsFree && !!me, busy || speaker !== null);
 
-  async function openDeal(l: Lead) {
-    const { id } = await api<{ id: string }>("/api/session", { url: `https://${l.domain}`, offering });
-    router.push(`/brief/${id}`);
+  // Elena books the meeting: slot, invite, lead moves to "meeting".
+  async function bookLead(l: Lead) {
+    if (booking) return;
+    setBooking(l.id);
+    setWorking({ who: "procurement", task: `booking a meeting with ${l.company}` });
+    busyRef.current = true;
+    try {
+      const r = await api<Reply>("/api/team", { book: l.id, player: me || "You" });
+      setState(r.state);
+      setSpeaker(r.speaker);
+      setCaption({ who: r.speaker, text: r.line });
+      setOpen(l.id);
+      const who = r.speaker;
+      speak(r.line, who, () => setSpeaker((cur) => (cur === who ? null : cur)));
+    } finally {
+      busyRef.current = false;
+      setBooking(null);
+      setWorking(null);
+      lastTalk.current = Date.now();
+    }
+  }
+
+  function calLink(l: Lead) {
+    if (!l.meeting) return "#";
+    const f = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    const a = new Date(l.meeting.start);
+    const b = new Date(a.getTime() + 30 * 60000);
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(l.meeting.subject)}&dates=${f(a)}/${f(b)}&details=${encodeURIComponent(l.meeting.invite)}`;
   }
 
   if (!state) return <p className="p-10 text-muted">Opening your team room…</p>;
@@ -234,8 +260,8 @@ export default function TeamRoom() {
           <span className="max-w-[420px] truncate text-sm text-muted">{state.company ? `${state.company} · ` : ""}{state.icp ? `selling to ${state.icp}` : offering}</span>
         </div>
         <div className="pointer-events-auto flex gap-2">
-          <Link href="/deals" className="card px-4 py-2.5 text-sm">
-            Deals in meetings
+          <Link href="/crm" target="_blank" className="card px-4 py-2.5 text-sm">
+            Open CRM ↗
           </Link>
         </div>
       </div>
@@ -303,14 +329,17 @@ export default function TeamRoom() {
       )}
 
       {/* leads dashboard */}
-      <aside className="card absolute bottom-28 right-5 top-24 flex w-[400px] flex-col overflow-hidden">
-        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+      <aside className={`card absolute right-5 top-24 flex flex-col overflow-hidden ${mini ? "w-[220px]" : "bottom-28 w-[360px]"}`}>
+        <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Leads · {state.leads.length}</p>
-          <span className="text-xs text-muted">
-            {counts.tech} drafted · {state.leads.filter((l) => l.status === "meeting").length} meetings
+          <span className="flex items-center gap-2 text-xs text-muted">
+            {!mini && `${counts.tech} drafted · ${state.leads.filter((l) => l.status === "meeting").length} meetings`}
+            <button onClick={() => setMini((m) => !m)} className="rounded-full border border-line px-2 py-0.5 hover:border-ink" aria-label={mini ? "Expand leads" : "Minimize leads"}>
+              {mini ? "Show" : "—"}
+            </button>
           </span>
         </div>
-        <div className="flex-1 space-y-2 overflow-y-auto p-3">
+        <div className={`flex-1 space-y-2 overflow-y-auto p-3 ${mini ? "hidden" : ""}`}>
           {state.leads.length === 0 && <p className="p-2 text-sm text-muted">No leads yet. Say &ldquo;Maya, find me leads&rdquo;.</p>}
           {state.leads.map((l) => (
             <div key={l.id} className={`rise rounded-xl border bg-white p-3 text-sm ${fresh.includes(l.id) ? "border-accent" : "border-line"}`}>
@@ -339,10 +368,25 @@ export default function TeamRoom() {
                 <button onClick={() => (l.email ? setOpen(open === l.id ? null : l.id) : void send(`Arjun, draft an email for ${l.company}.`))} className="rounded-full border border-line px-3 py-1 text-xs hover:border-ink">
                   {l.email ? (open === l.id ? "Hide email" : "View email") : "Draft email"}
                 </button>
-                <button onClick={() => void openDeal(l)} className="rounded-full bg-ink px-3 py-1 text-xs text-white">
-                  Book meeting →
-                </button>
+                {l.meeting ? (
+                  <a href={calLink(l)} target="_blank" className="rounded-full bg-emerald-600 px-3 py-1 text-xs text-white">
+                    Booked · {l.meeting.when}
+                  </a>
+                ) : (
+                  <button onClick={() => void bookLead(l)} disabled={!!booking} className="rounded-full bg-ink px-3 py-1 text-xs text-white disabled:opacity-60">
+                    {booking === l.id ? "Elena is booking…" : "Book meeting →"}
+                  </button>
+                )}
               </div>
+              {open === l.id && l.meeting && (
+                <div className="mt-2 rounded-lg bg-emerald-50 p-2.5 text-xs">
+                  <p className="font-semibold">{l.meeting.subject} · {l.meeting.when}</p>
+                  <p className="mt-1 whitespace-pre-line text-ink/85">{l.meeting.invite}</p>
+                  <a href={calLink(l)} target="_blank" className="mt-2 inline-block underline">
+                    Add to Google Calendar
+                  </a>
+                </div>
+              )}
               {open === l.id && l.email && (
                 <div className="mt-2 rounded-lg bg-black/[0.03] p-2.5 text-xs">
                   <p className="font-semibold">{l.email.subject}</p>
@@ -358,7 +402,7 @@ export default function TeamRoom() {
       </aside>
 
       {live && (
-        <div className="rise pointer-events-none absolute bottom-32 left-72 right-[430px] flex justify-center px-6">
+        <div className="rise pointer-events-none absolute bottom-32 left-72 right-[390px] flex justify-center px-6">
           <div className="max-w-2xl rounded-2xl bg-black/70 px-6 py-3 text-center text-white backdrop-blur">
             <span className="mr-2 text-sm font-semibold uppercase tracking-wide">{liveName}</span>
             <span className="text-lg leading-snug">{live.text}</span>

@@ -1,4 +1,4 @@
-import { loadTeam, pruneCompetitors, teamSetup, teamTurn } from "@/lib/agents/team";
+import { bookMeeting, loadTeam, pruneCompetitors, teamSetup, teamTurn } from "@/lib/agents/team";
 import { writeEvents } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -10,8 +10,9 @@ export async function GET() {
 
 /** Talk to your team. The right teammate answers and does the work. */
 export async function POST(req: Request) {
-  const { text, player, offering, setupUrl, prune } = (await req.json()) as { text?: string; player?: string; offering?: string; setupUrl?: string; prune?: boolean };
+  const { text, player, offering, setupUrl, prune, book } = (await req.json()) as { text?: string; player?: string; offering?: string; setupUrl?: string; prune?: boolean; book?: string };
   if (prune) return Response.json({ removed: await pruneCompetitors(), state: await loadTeam() });
+  if (book) return Response.json(await bookMeeting(book, (player || "You").trim()));
   if (setupUrl?.trim()) return Response.json(await teamSetup(setupUrl.trim(), (player || "there").trim()));
   if (!text?.trim()) return Response.json({ error: "say something" }, { status: 400 });
   const r = await teamTurn(text.trim(), (player || "You").trim(), offering);

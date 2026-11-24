@@ -6,11 +6,11 @@ type Schema = Record<string, unknown>;
 // The model is chosen per session (setup page or the room's model switcher) and can change any time.
 // Provider follows the model name: "claude-*" uses Anthropic, anything else uses OpenAI.
 export const MODEL_OPTIONS = [
+  "gpt-6.2-sol",
   "gpt-4.1-mini",
   "gpt-4.1",
   "gpt-5.4-mini",
   "gpt-5.5",
-  "gpt-6.2-sol",
   "claude-haiku-5-5",
   "claude-sonnet-5-5",
   "claude-opus-5-5",
@@ -25,7 +25,7 @@ export function withModel<T>(model: string | undefined, fn: () => Promise<T>): P
 export function defaultModel() {
   if (process.env.LLM_MODEL) return process.env.LLM_MODEL;
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "claude-haiku-5-5";
-  return process.env.OPENAI_MODEL || "gpt-4.1-mini";
+  return process.env.OPENAI_MODEL || "gpt-6.2-sol";
 }
 
 export function currentModel() {
