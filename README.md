@@ -106,3 +106,17 @@ public/models/  rigged GLB characters
 ```
 
 All code was written during the hackathon.
+
+## Use Deal Room from Claude or ChatGPT (MCP connector)
+
+The app serves an MCP server at `/api/mcp` (Streamable HTTP, no sign-in yet). Add it as a custom connector:
+
+- Claude: Settings → Connectors → Add custom connector → `https://<your-host>/api/mcp`
+- ChatGPT: Settings → Apps & Connectors → enable developer mode → Create → same URL, authentication "None"
+- Claude Code: `claude mcp add --transport http deal-room https://<your-host>/api/mcp`
+
+Then ask, for example: "Use Deal Room for acme.com: find buyers in fintech and draft outreach for the best one."
+
+Tools: `start_company`, `find_buyers`, `list_leads`, `get_lead`, `draft_outreach`, `review_outreach`, `prepare_meeting`, `remove_lead`, `get_company`, `pipeline_summary`, `search_memory`. They call the same team and GTM engine as the web app (`lib/mcp/tools.ts`), so work done in chat shows up in `/gtm` and `/crm` for that company.
+
+Deal Room does not send email or LinkedIn messages: approved messages are marked ready and the user sends them.

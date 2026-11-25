@@ -100,6 +100,10 @@ export async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
       for (const k of Object.keys(old) as (keyof Lead)[]) if (l[k] === undefined) (l as Record<string, unknown>)[k] = old[k];
       if (RANK[old.status] > RANK[l.status]) l.status = old.status;
     }
+    // A lead the seller removed while this request was still working (background enrichment, a draft) stays removed.
+    t.excluded = [...new Set([...(cur.excluded ?? []), ...(t.excluded ?? [])])].slice(-100);
+    const gone = new Set(t.excluded.map((x) => x.toLowerCase()));
+    t.leads = t.leads.filter((l) => !gone.has(l.company.toLowerCase()));
     const seen = new Set(t.chat.map((c) => `${c.at}|${c.who}|${c.text}`));
     t.chat.push(...cur.chat.filter((c) => !seen.has(`${c.at}|${c.who}|${c.text}`)));
     t.chat.sort((x, y) => x.at.localeCompare(y.at));
