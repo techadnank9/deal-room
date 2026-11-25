@@ -45,9 +45,11 @@ type TeamState = {
   leads: Lead[];
   chat: { who: string; text: string; at: string }[];
 };
+type Recall = { ms: number; hits: number; provider: string; model?: string; inferMs?: number; facts: string[] };
 type Reply = {
   speaker: string;
   line: string;
+  recall?: Recall;
   found?: Lead[];
   email?: Lead;
   meeting?: Lead;
@@ -65,6 +67,7 @@ export default function TeamRoom() {
   const [me, setMe] = useState("");
   const [offering, setOffering] = useState("");
   const [speaker, setSpeaker] = useState<string | null>(null);
+  const [recall, setRecall] = useState<Recall | null>(null);
   const [caption, setCaption] = useState<{ who: string; text: string } | null>(
     null,
   );
@@ -227,8 +230,10 @@ export default function TeamRoom() {
               who: "tech",
               task: `writing an email${target ? ` to ${target}` : ""}`,
             }
+          : /\?|what do we know|who is|who's|tell me about/.test(low)
+            ? { who: named ?? "procurement", task: "recalling from Moss memory" }
           : /elena|pipeline|status|update|book/.test(low)
-            ? { who: "procurement", task: "checking every lead and deal" }
+            ? { who: "procurement", task: "recalling the pipeline from Moss memory" }
             : {
                 who: "cfo",
                 task: "searching the web with Telem and enriching with Glasser",
@@ -243,6 +248,10 @@ export default function TeamRoom() {
           offering,
         });
         setState(r.state);
+        if (!auto && r.recall) {
+          setRecall(r.recall);
+          setTimeout(() => setRecall((x) => (x === r.recall ? null : x)), 14000);
+        }
         if (r.found?.length) {
           setFresh(r.found.map((l) => l.id));
           setTimeout(() => setFresh([]), 6000);
@@ -854,6 +863,30 @@ export default function TeamRoom() {
           ))}
         </div>
       </aside>
+
+      {recall && (
+        <div className="rise card pointer-events-none absolute left-5 top-[380px] w-64 p-4 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-[#3f6b3f] px-2 py-0.5 text-[11px] font-bold tracking-wider text-white">MOSS</span>
+            <span className="text-xs text-muted">team memory</span>
+          </div>
+          <p className="mt-2 leading-snug">
+            Recalled <b>{recall.hits}</b> facts in <b className="font-mono">{recall.ms} ms</b>
+          </p>
+          {recall.model && (
+            <p className="leading-snug">
+              Answered by <span className="font-mono text-xs">{recall.model}</span> in <b className="font-mono">{recall.inferMs} ms</b>
+            </p>
+          )}
+          {!!recall.facts.length && (
+            <ul className="mt-2 space-y-1 text-xs text-muted">
+              {recall.facts.slice(0, 3).map((f) => (
+                <li key={f} className="line-clamp-2">{f}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {live && (
         <div className="rise pointer-events-none absolute bottom-32 left-72 right-[390px] flex justify-center px-6">

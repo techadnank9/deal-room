@@ -2,7 +2,7 @@
 // Every lead, source, signal, contact and email the agents produce is indexed per company. Agents query it
 // before they act (dedupe, "which lead matches this signal", lookalikes of reference customers), and the
 // GTM page has a search box over everything. No MOSS keys: a local keyword index stands in.
-import { MossClient } from "@moss-js/moss";
+import { MossClient, MossInference } from "@moss-js/moss";
 
 export type MossDoc = { id: string; text: string; metadata?: Record<string, string> };
 export type MossHit = { id: string; text: string; score: number; metadata?: Record<string, string>; };
@@ -50,9 +50,13 @@ export async function indexDocs(domain: string, docs: MossDoc[]) {
   }
 }
 
+const loadedAt = new Map<string, number>();
 async function ensureLoaded(index: string) {
   const c = client();
-  if (st.dirty.has(index) || !st.ready.has(index)) {
+  // Reload at most every 20 s: docs added since are answered from the in-memory mirror, so queries stay in single-digit ms.
+  const stale = st.dirty.has(index) && Date.now() - (loadedAt.get(index) ?? 0) > 20000;
+  if (stale || !st.ready.has(index)) {
+    loadedAt.set(index, Date.now());
     st.dirty.delete(index);
     const p = c.loadIndex(index).then(() => undefined);
     st.ready.set(index, p);
@@ -100,4 +104,24 @@ export async function search(domain: string, q: string, opts: { topK?: number; k
   }
   const hits = keywordSearch(index, q, topK, opts.kind);
   return { hits, ms: Math.round((performance.now() - t0) * 10) / 10, provider: "local" };
+}
+
+/**
+ * Moss inference gateway (OpenAI-style responses, Moss's own model). We do retrieval ourselves (company-filtered,
+ * in-process) and pass the facts in, so retrieve is off: the shared index never leaks another company's data.
+ */
+const gi = globalThis as unknown as { __mossInf?: MossInference };
+export async function mossAnswer(instructions: string, input: string, timeoutMs = 9000): Promise<{ text: string; model: string; ms: number } | null> {
+  if (!mossEnabled()) return null;
+  const t0 = performance.now();
+  try {
+    const inf = (gi.__mossInf ??= new MossInference(process.env.MOSS_PROJECT_ID!, process.env.MOSS_PROJECT_KEY!, { timeout: timeoutMs, maxRetries: 0 }));
+    const r = await inf.responses.create({ input, instructions, retrieve: false, stream: false, max_output_tokens: 220 });
+    const text = (r.output_text ?? "").trim();
+    if (!text) return null;
+    return { text, model: r.model ?? "moss", ms: Math.round(performance.now() - t0) };
+  } catch (err) {
+    console.error("[moss] inference failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
 }

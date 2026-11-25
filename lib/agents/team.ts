@@ -151,6 +151,7 @@ export type TeamReply = {
   found?: Lead[];
   email?: Lead;
   meeting?: Lead;
+  recall?: import("../gtm/engine").Recall;
   state: TeamState;
 };
 
@@ -231,17 +232,17 @@ export async function teamTurn(
   const leadNames = t.leads.map((l) => l.company).join(", ") || "none yet";
   const { data: plan } = await llmJSON<{
     agent: TeamId;
-    action: "find_leads" | "draft_email" | "pipeline" | "chat";
+    action: "find_leads" | "draft_email" | "pipeline" | "ask" | "chat";
     query: string;
     company: string;
   }>({
     label: "team-route",
     maxTokens: 300,
-    system: `Our company: ${t.company ?? "?"}. Ideal customer: ${t.icp ?? "unknown"}. Route the seller's request to one teammate. Teammates: ${TEAM.map((m) => `${m.id}=${m.name} (${m.role}: ${m.does})`).join("; ")}. If the seller names a teammate, pick them. action: find_leads (search the web for new prospect companies; query = a web search query for companies that match who would buy what we sell, include the segment the seller asked for), draft_email (company = which lead), pipeline (status update on leads and deals), chat (anything else).`,
+    system: `Our company: ${t.company ?? "?"}. Ideal customer: ${t.icp ?? "unknown"}. Route the seller's request to one teammate. Teammates: ${TEAM.map((m) => `${m.id}=${m.name} (${m.role}: ${m.does})`).join("; ")}. If the seller names a teammate, pick them. action: find_leads (search the web for new prospect companies; query = a web search query for companies that match who would buy what we sell, include the segment the seller asked for), draft_email (company = which lead), pipeline (status update on leads and deals), ask (any question about what we know: a lead, company, person, buying signal, competitor, our ICP, or who is hiring/raising/launching; answered from team memory), chat (small talk or anything else).`,
     user: `We sell: ${t.offering || "(not said yet)"}\nKnown leads: ${leadNames}\nSeller says: "${text}"`,
     schema: obj({
       agent: enm(["cfo", "tech", "procurement"]),
-      action: enm(["find_leads", "draft_email", "pipeline", "chat"]),
+      action: enm(["find_leads", "draft_email", "pipeline", "ask", "chat"]),
       query: str(),
       company: str(),
     }),
@@ -255,7 +256,9 @@ export async function teamTurn(
         ? "draft_email"
         : /pipeline|status|update/i.test(text)
           ? "pipeline"
-          : "find_leads",
+          : /\?|what do we know|who is|who's|tell me about/i.test(text)
+            ? "ask"
+            : "find_leads",
       query: `${text} companies`,
       company: t.leads[0]?.company ?? "",
     }),
@@ -265,6 +268,7 @@ export async function teamTurn(
   let line = "";
   let found: Lead[] | undefined;
   let email: Lead | undefined;
+  let recall: import("../gtm/engine").Recall | undefined;
 
   if (plan.action === "find_leads") {
     // 2. Telem search for prospects, LLM picks real companies, Glasser enriches them.
@@ -415,6 +419,15 @@ export async function teamTurn(
       email = lead;
       line = `${player}, I drafted a three-step sequence for ${lead.company}${done?.contacts?.[0] ? ` to ${done.contacts[0].name}` : ""}. It's in your approval queue; nothing goes out until you approve it.`;
     }
+  } else if (plan.action === "ask" || plan.action === "pipeline") {
+    // Voice answers come from GTM memory: Moss search (a few ms, in-process) + Moss inference.
+    await saveTeam(t);
+    const { recallAnswer } = await import("../gtm/engine");
+    const r = await recallAnswer(text, me, player);
+    line = r.line;
+    recall = r.recall;
+    const after = await loadTeam();
+    t.activity = after.activity;
   } else {
     const meetings = t.leads.filter((l) => l.meeting);
     const { data } = await llmJSON<{ say: string }>({
@@ -436,7 +449,7 @@ export async function teamTurn(
     const leads = found;
     void import("../gtm/engine").then((m) => m.onLeadsFound(leads)).catch((e) => console.error("[gtm] onLeadsFound", e));
   }
-  return { speaker: me.id, line, found, email, state: t };
+  return { speaker: me.id, line, found, email, recall, state: t };
 }
 
 /** You enter your company URL: Maya researches you with Telem, works out what you sell and who buys it, then goes hunting. */

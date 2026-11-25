@@ -5,7 +5,7 @@ import { loadTeam, saveTeam, type Lead, type TeamState } from "../agents/team";
 import { searchWeb } from "../sponsors/telem";
 import { enrichCompany } from "../sponsors/glasser";
 import { canSpend, meter, PRICES } from "../sponsors/flexprice";
-import { indexDocs, search } from "../sponsors/moss";
+import { indexDocs, mossAnswer, search } from "../sponsors/moss";
 import type { Activity, Actor, Competitor, Contact, IcpSpec, Intake, Signal, Stage, Touch } from "./types";
 
 const num = (d?: string): Record<string, unknown> => ({ type: "number", ...(d ? { description: d } : {}) });
@@ -532,4 +532,43 @@ export async function reindexAll() {
   }
   await indexDocs(domainKey(t), docs);
   return docs.length;
+}
+
+export type Recall = { ms: number; hits: number; provider: "moss" | "local"; model?: string; inferMs?: number; facts: string[] };
+
+/**
+ * Voice: a teammate answers from GTM memory. Moss search (in-process, this company only) finds the facts in a few ms,
+ * then Moss inference speaks the answer from those facts; our own model is the fallback.
+ */
+export async function recallAnswer(question: string, speaker: { name: string; role: string }, player: string): Promise<{ line: string; recall: Recall }> {
+  const t = await loadTeam();
+  const r = await search(domainKey(t), question, { topK: 6 });
+  await meter("search_query", { via: "voice" }, question.slice(0, 60));
+  const facts = r.hits.filter((h) => h.score > 0.05).map((h) => `[${h.metadata?.kind ?? "fact"}] ${h.text.slice(0, 280)}`);
+  const pipeline = t.leads.slice(0, 12).map((l) => `${l.company}: ${stageOf(l)}${l.tier ? `, Tier ${l.tier} (${l.score})` : ""}`).join("; ");
+  const instructions = `You are ${speaker.name}, ${speaker.role} on ${player}'s sales team at ${t.company ?? "our company"}. Answer out loud in 1-3 short natural sentences, using ONLY the facts and pipeline given. Name specific companies, people and signals. If the facts do not answer it, say what you do know and what you will look into next. Never ask ${player} a question. Never mention facts, memory, recall or the pipeline as sources; just say it like a teammate who knows. No lists, no markdown.`;
+  const input = `${player} asks: "${question}"\n\nFacts recalled from memory:\n${facts.join("\n") || "(none)"}\n\nPipeline: ${pipeline || "no leads yet"}`;
+  let line = "";
+  let model: string | undefined;
+  let inferMs: number | undefined;
+  const inf = await mossAnswer(instructions, input);
+  if (inf) {
+    line = inf.text.replace(/\s*\n+\s*/g, " ");
+    model = inf.model;
+    inferMs = inf.ms;
+  } else {
+    const { data } = await llmJSON<{ say: string }>({
+      label: "team-recall",
+      maxTokens: 300,
+      system: instructions,
+      user: input,
+      schema: obj({ say: str() }),
+      mock: () => ({ say: facts[0] ? `Here's what I have: ${facts[0].replace(/^\[[^\]]+\]\s*/, "")}` : `${player}, I don't have anything on that yet.` }),
+    });
+    line = data.say;
+  }
+  const recall: Recall = { ms: r.ms, hits: facts.length, provider: r.provider, model, inferMs, facts: facts.slice(0, 4) };
+  log(t, { actor: "agent", who: speaker.name, kind: "search", text: `Voice: Moss recalled ${facts.length} facts in ${r.ms} ms${model ? `, answered by ${model} in ${inferMs} ms` : ""} for "${question.slice(0, 60)}"`, ms: r.ms });
+  await saveTeam(t);
+  return { line, recall };
 }
