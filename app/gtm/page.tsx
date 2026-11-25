@@ -253,7 +253,7 @@ function IcpTab({ t, busy, act }: { t: TeamState; busy: string | null; act: (l: 
 
       <div className="min-w-0 space-y-5">
         {!s ? (
-          <div className="card grid place-items-center p-10 text-sm text-muted">No ICP yet. Fill in the intake and press Generate.</div>
+          <div className="card grid place-items-center p-10 text-sm text-muted">{t.intake ? <span className="flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-accent" />Maya is building your ICP from your website…</span> : "No ICP yet. Enter your company URL on the home page, or fill in the intake and press Generate."}</div>
         ) : (
           <>
             <div className="card p-5">

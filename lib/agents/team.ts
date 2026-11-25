@@ -434,10 +434,12 @@ export async function teamSetup(
     icp: string;
     queries: string[];
     say: string;
+    customers: string[];
+    pricing: string;
   }>({
     label: "team-setup",
     maxTokens: 900,
-    system: `You are Maya, lead researcher joining ${player}'s sales team. From the research about their own company, work out: company name; offering (what they sell, one line); icp (who buys it: industry, size, stage, buyer role, one line); queries (3 web search queries that surface specific BUYER companies matching the ICP. Do NOT put our product category words in the query (e.g. for a QA tool do not say "QA" or "testing"; search "SaaS startup raises Series B 2026" instead), otherwise the results are all competitors: search for buying signals such as funding rounds, hiring for the role that has the problem, or launches, e.g. "SaaS startup raises Series B 2026 hiring QA engineers"); say (2 natural spoken sentences to ${player}: what you understood they sell and who you'll go after).${ACT}`,
+    system: `You are Maya, lead researcher joining ${player}'s sales team. From the research about their own company, work out: company name; offering (what they sell, one line); icp (who buys it: industry, size, stage, buyer role, one line); queries (3 web search queries that surface specific BUYER companies matching the ICP. Do NOT put our product category words in the query (e.g. for a QA tool do not say "QA" or "testing"; search "SaaS startup raises Series B 2026" instead), otherwise the results are all competitors: search for buying signals such as funding rounds, hiring for the role that has the problem, or launches, e.g. "SaaS startup raises Series B 2026 hiring QA engineers"); say (2 natural spoken sentences to ${player}: what you understood they sell and who you'll go after); customers (customer or logo company names the research explicitly shows, max 8, [] if none); pricing (pricing model or tiers if shown, else "").${ACT}`,
     user: `Company website: ${url}\nResearch (Telem):\n${research.sources.map((x, i) => `[${i + 1}] ${x.title} ${x.url}\n${x.snippet.slice(0, 500)}`).join("\n\n") || "(none)"}`,
     schema: obj({
       company: str(),
@@ -445,8 +447,12 @@ export async function teamSetup(
       icp: str(),
       queries: arr(str()),
       say: str(),
+      customers: arr(str()),
+      pricing: str(),
     }),
     mock: () => ({
+      customers: [],
+      pricing: "",
       company: domain,
       offering: `${domain}'s product`,
       icp: "B2B software companies",
@@ -470,8 +476,22 @@ export async function teamSetup(
     t.excluded = prev.excluded;
   }
   t.chat.push({ who: "cfo", text: data.say, at: new Date().toISOString() });
+  // The URL is the whole intake: what they sell, who their customers are, pricing. The GTM engine starts from it.
+  t.intake ??= prev.intake ?? { product: data.offering, customers: data.customers.join(", "), pricing: data.pricing, constraints: "" };
+  t.icpSpec ??= prev.icpSpec;
+  t.competitors ??= prev.competitors;
+  t.activity = prev.activity;
   await saveTeam(t, { replace: true });
   await pruneCompetitors();
+  if (!t.icpSpec) {
+    const intake = t.intake;
+    void import("../gtm/engine")
+      .then(async (m) => {
+        await m.buildIcp(intake);
+        await m.mapCompetitors();
+      })
+      .catch((e) => console.error("[gtm] auto ICP", e));
+  }
   // quick setup: return as soon as Maya knows the company; the page starts the hunt right away.
   if (!hunt) return { speaker: "cfo", line: data.say, state: await loadTeam() };
   const found = await teamTurn(
