@@ -15,7 +15,7 @@ export const LABELS: Record<Metered, string> = {
   search_query: "Moss searches",
 };
 
-type Ledger = { counts: Record<Metered, number>; recent: { event: Metered; at: string; detail?: string }[]; balance?: number; balanceAt?: number; walletId?: string };
+type Ledger = { counts: Record<Metered, number>; recent: { event: Metered; at: string; detail?: string }[]; balance?: number; balanceAt?: number; walletId?: string; optimistic?: number };
 const g = globalThis as unknown as { __fp?: Ledger };
 const ledger: Ledger = (g.__fp ??= { counts: { lead_enriched: 0, outreach_sent: 0, graph_query: 0, search_query: 0 }, recent: [] });
 const LOCAL_START = 25;
@@ -40,7 +40,11 @@ export async function meter(event: Metered, props: Record<string, string> = {}, 
   ledger.counts[event]++;
   ledger.recent.unshift({ event, at: new Date().toISOString(), detail });
   ledger.recent = ledger.recent.slice(0, 50);
-  if (ledger.balance !== undefined) ledger.balance = Math.max(0, ledger.balance - PRICES[event]); // optimistic until the next real-time read
+  // Flexprice nets events into the real-time balance a few seconds late: show the charge at once and never let a lagging read raise it.
+  if (ledger.balance !== undefined) {
+    ledger.optimistic = Math.max(0, (ledger.optimistic ?? ledger.balance) - PRICES[event]);
+    ledger.balance = Math.min(ledger.balance, ledger.optimistic);
+  }
   if (!flexpriceEnabled()) return;
   try {
     await fp("POST", "/events", { event_name: event, external_customer_id: CUSTOMER, properties: props, source: "deal-room-gtm" });
@@ -68,7 +72,9 @@ export async function balance(force = false): Promise<number> {
     const id = await walletId();
     if (!id) throw new Error("no wallet (run scripts/flexprice-setup.mjs)");
     const b = await fp<{ real_time_balance?: string; real_time_credit_balance?: string; balance?: string }>("GET", `/wallets/${id}/balance/real-time`);
-    ledger.balance = Number(b.real_time_credit_balance ?? b.real_time_balance ?? b.balance ?? 0);
+    const real = Number(b.real_time_credit_balance ?? b.real_time_balance ?? b.balance ?? 0);
+    if (force || ledger.optimistic === undefined || real < ledger.optimistic) ledger.optimistic = real;
+    ledger.balance = Math.min(real, ledger.optimistic);
     ledger.balanceAt = Date.now();
   } catch (err) {
     console.error("[flexprice] balance failed:", err instanceof Error ? err.message : err);
@@ -109,6 +115,7 @@ export async function drain() {
     });
   }
   ledger.balance = 0;
+  ledger.optimistic = 0;
   ledger.balanceAt = Date.now();
   return 0;
 }
