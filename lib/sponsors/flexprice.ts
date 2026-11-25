@@ -87,7 +87,7 @@ export async function topUp(credits: number) {
     return balance(true);
   }
   const id = await walletId();
-  await fp("POST", `/wallets/${id}/top-up`, { credits_to_add: String(credits), transaction_reason: "PURCHASED_CREDIT_DIRECT", description: "Top-up from GTM Engine" });
+  await fp("POST", `/wallets/${id}/top-up`, { credits_to_add: String(credits), transaction_reason: "FREE_CREDIT_GRANT", description: "Top-up from GTM Engine" });
   return balance(true);
 }
 
