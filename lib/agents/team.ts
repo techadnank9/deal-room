@@ -110,6 +110,22 @@ export async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
     t.intake ??= cur.intake;
     t.leads.sort((x, y) => y.at.localeCompare(x.at));
   }
+  // GTM data is never dropped, even by a replace (prune/setup) that raced with the ICP or competitor builders.
+  if (opts.replace) {
+    const now = await kvGet<TeamState>(key());
+    if (now && (!t.url || now.url === t.url)) {
+      t.icpSpec ??= now.icpSpec;
+      t.competitors ??= now.competitors;
+      t.intake ??= now.intake;
+      const seenA = new Set((t.activity ?? []).map((a) => a.id));
+      t.activity = [...(t.activity ?? []), ...(now.activity ?? []).filter((a) => !seenA.has(a.id))].sort((x, y) => y.at.localeCompare(x.at)).slice(0, 300);
+      const byId = new Map(now.leads.map((l) => [l.id, l]));
+      for (const l of t.leads) {
+        const o = byId.get(l.id);
+        if (o) for (const k of Object.keys(o) as (keyof Lead)[]) if (l[k] === undefined) (l as Record<string, unknown>)[k] = o[k];
+      }
+    }
+  }
   t.chat = t.chat.slice(-60);
   await kvSet(key(), t);
 }
