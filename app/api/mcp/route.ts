@@ -1,4 +1,5 @@
 import { callTool, ToolError, TOOLS } from "@/lib/mcp/tools";
+import { workspaceForKey, type Workspace } from "@/lib/workspace";
 
 // Deal Room's MCP server (Streamable HTTP, stateless): add this URL as a custom connector in Claude or ChatGPT.
 // Each POST carries one JSON-RPC message (or a batch) and gets a plain JSON answer; no session, no stream.
@@ -14,7 +15,7 @@ const CORS = {
   "Access-Control-Allow-Headers": "content-type, accept, authorization, mcp-protocol-version, mcp-session-id",
 };
 const INSTRUCTIONS =
-  "Deal Room is an AI sales team: Maya finds buyers, Arjun writes outreach, Elena tracks the pipeline. Every tool takes `company`, the seller's own website. Usual order: start_company, find_buyers, draft_outreach, then show the drafts to the user and call review_outreach with their decision. Never approve a message the user has not approved. Deal Room does not send email or LinkedIn messages itself; the user sends approved messages.";
+  "Deal Room is an AI sales team: Maya finds buyers, Arjun writes outreach, Elena tracks the pipeline. Every tool takes `company`, the seller's own website. Usual order: start_company, find_buyers, draft_outreach, then show the drafts to the user and call review_outreach with their decision. Never approve a message the user has not approved. An approved email is sent from the user's own connected mailbox in their sending window; LinkedIn notes are sent by hand. With a workspace key, every tool works on that workspace's company.";
 
 type Rpc = { jsonrpc?: string; id?: string | number | null; method?: string; params?: Record<string, unknown> };
 type Reply = { jsonrpc: "2.0"; id: string | number | null; result?: unknown; error?: { code: number; message: string } };
@@ -22,7 +23,7 @@ type Reply = { jsonrpc: "2.0"; id: string | number | null; result?: unknown; err
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: CORS });
 const fail = (id: Rpc["id"], code: number, message: string): Reply => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
 
-async function handle(m: Rpc): Promise<Reply | null> {
+async function handle(m: Rpc, ws: Workspace | null): Promise<Reply | null> {
   if (!m || m.jsonrpc !== "2.0" || typeof m.method !== "string") return fail(m?.id, -32600, "Invalid request");
   // Notifications and client responses carry no id: nothing to answer.
   if (m.id === undefined || m.id === null) return null;
@@ -45,7 +46,7 @@ async function handle(m: Rpc): Promise<Reply | null> {
       const name = String(m.params?.name ?? "");
       if (!TOOLS.some((t) => t.name === name)) return fail(m.id, -32602, `Unknown tool: ${name}`);
       try {
-        const out = await callTool(name, (m.params?.arguments ?? {}) as Record<string, string | undefined>);
+        const out = await callTool(name, (m.params?.arguments ?? {}) as Record<string, string | undefined>, ws);
         return ok({ content: [{ type: "text", text: JSON.stringify(out, null, 1) }], isError: false });
       } catch (err) {
         // Tool failures go back as a tool result so the model can read them and correct itself.
@@ -60,6 +61,10 @@ async function handle(m: Rpc): Promise<Reply | null> {
 }
 
 export async function POST(req: Request) {
+  // Key from "Authorization: Bearer dr_…" or the connector URL (?key=dr_…).
+  const key = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || new URL(req.url).searchParams.get("key");
+  const ws = await workspaceForKey(key);
+  if (key && !ws) return json(fail(null, -32001, "This Deal Room key is not valid any more. Make a new one in Deal Room → MCP."), 401);
   let body: unknown;
   try {
     body = await req.json();
@@ -68,10 +73,10 @@ export async function POST(req: Request) {
   }
   if (Array.isArray(body)) {
     if (!body.length) return json(fail(null, -32600, "Invalid request"), 400);
-    const replies = (await Promise.all(body.map((m) => handle(m as Rpc)))).filter((r): r is Reply => r !== null);
+    const replies = (await Promise.all(body.map((m) => handle(m as Rpc, ws)))).filter((r): r is Reply => r !== null);
     return replies.length ? json(replies) : new Response(null, { status: 202, headers: CORS });
   }
-  const reply = await handle(body as Rpc);
+  const reply = await handle(body as Rpc, ws);
   return reply ? json(reply) : new Response(null, { status: 202, headers: CORS });
 }
 

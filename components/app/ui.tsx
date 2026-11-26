@@ -152,6 +152,9 @@ export function Empty({ title, children }: { title: string; children?: React.Rea
   );
 }
 
+/** Page for one person: /app/contacts/<leadId>~<contactId>. */
+export const contactHref = (leadId: string, contactId: string) => `/app/contacts/${encodeURIComponent(`${leadId}~${contactId}`)}`;
+
 export function topContact(l: Lead) {
   return l.contacts?.find((c) => c.persona && c.email) ?? l.contacts?.find((c) => c.email) ?? l.contacts?.[0];
 }

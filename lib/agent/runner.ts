@@ -184,11 +184,12 @@ async function runSource(ws: Workspace, s: AgentState): Promise<number> {
 
 async function runDrafts(ws: Workspace, s: AgentState) {
   // Catch up on leads that were found but not enriched yet (searches only enrich their first few).
-  const backlog = (await loadTeam()).leads.filter((l) => !l.enriched && l.stage !== "lost").slice(0, 3);
+  const tb = await loadTeam();
+  const backlog = tb.prefs?.autoEnrich === false ? [] : tb.leads.filter((l) => !l.enriched && l.stage !== "lost").slice(0, 3);
   for (const l of backlog) await enrichLead(l.id).catch((e) => console.error("[agent] enrich", e));
   if (backlog.length) note(s, `Researched ${backlog.map((l) => l.company).join(", ")}: people, emails and fit`);
   const t = await loadTeam();
-  const hasPersona = (t.personas ?? []).some((p) => p.enabled);
+  const hasPersona = t.prefs?.personaOnly !== false && (t.personas ?? []).some((p) => p.enabled);
   const ready = t.leads
     .filter((l) => l.enriched === "done" && !l.sequence?.length && !["lost", "won"].includes(l.stage ?? ""))
     .filter((l) => (l.contacts ?? []).some((c) => c.email && ["verified", "risky", "mx-valid", "guessed"].includes(c.emailStatus) && (!hasPersona || c.persona)))

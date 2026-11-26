@@ -1,5 +1,6 @@
 "use client";
 // Insights: what's working. Funnel, which signals and personas get replies, which message wins.
+import { useState } from "react";
 import { Empty, topContact, usePoll, type Gtm, type WorkspaceInfo } from "@/components/app/ui";
 import { STAGES, type Signal } from "@/lib/gtm/types";
 import type { Lead } from "@/lib/agents/team";
@@ -96,37 +97,59 @@ export default function InsightsPage() {
   const { data: gtm, error } = usePoll<Gtm>("/api/gtm", 30000);
   const { data: me } = usePoll<WorkspaceInfo>("/api/workspace", 30000);
 
-  const leads = gtm?.state.leads ?? [];
+  const [range, setRange] = useState<7 | 30 | 0>(30);
+  // eslint-disable-next-line react-hooks/purity -- the cut-off only needs to be roughly "now" for each render
+  const since = range ? Date.now() - range * 86400000 : 0;
+  const all = gtm?.state.leads ?? [];
+  const leads = all.filter((l) => !since || new Date(l.at).getTime() >= since);
   const funnel = gtm?.analytics.funnel ?? [];
-  const count = (s: string) => funnel.find((f) => f.stage === s)?.count ?? 0;
   const sent = leads.reduce((n, l) => n + (l.sequence ?? []).filter((m) => m.sentAt).length, 0);
   const contactedN = leads.filter(contacted).length;
-  const repliedN = count("replied");
+  const repliedN = leads.filter(replied).length;
+  const meetingsN = leads.filter((l) => ["meeting", "won"].includes(l.stage ?? "")).length;
   const kpis = [
-    { label: "Leads found", value: leads.length },
-    { label: "Emails sent", value: sent },
-    { label: "Replies", value: repliedN },
-    { label: "Reply rate", value: contactedN ? `${pct(repliedN, contactedN)}%` : "—" },
-    { label: "Meetings", value: count("meeting") },
+    { label: "Leads found", value: leads.length, sub: "companies picked" },
+    { label: "Contacted", value: contactedN, sub: `${sent} emails sent` },
+    { label: "Replied", value: repliedN, sub: contactedN ? `${pct(repliedN, contactedN)}% reply rate` : "— reply rate" },
+    { label: "Meetings", value: meetingsN, sub: repliedN ? `${pct(meetingsN, repliedN)}% of replies` : "— of replies" },
+    { label: "Waiting for you", value: leads.filter((l) => l.sequence?.some((m) => m.approval === "pending")).length, sub: "in Review" },
   ];
+  const bySource = group(leads, (l) => (l.foundBy.match(/\(([^)]+)\)/)?.[1] ?? l.foundBy).replace(/^./, (c) => c.toUpperCase()));
+  const days = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (13 - i));
+    const key = d.toISOString().slice(0, 10);
+    return { key, label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }), n: all.filter((l) => new Date(l.at).toDateString() === d.toDateString()).length };
+  });
+  const dmax = Math.max(1, ...days.map((d) => d.n));
   const bySignal = group(leads, (l) => SIGNAL_LABEL[l.signals?.[0]?.kind ?? "none"]);
   const byPersona = group(leads, (l) => topContact(l)?.persona || "No persona");
   const variants = (gtm?.analytics.variants ?? []).filter((v) => v.channel === "email");
   const fmax = Math.max(1, ...funnel.map((f) => f.count));
 
   return (
-    <div className="px-8 py-6">
+    <div className="px-4 py-6 md:px-8">
       <div className="mx-auto max-w-[1200px]">
         <header className="mb-6">
           <h1 className="text-2xl font-semibold tracking-tight">Insights</h1>
-          <p className="text-sm text-muted">What&apos;s working: which signals, people and messages get replies, so you know where to lean in.</p>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <p className="text-sm text-muted">What&apos;s working: which signals, people and messages get replies, so you know where to lean in.</p>
+            <div className="flex gap-1 rounded-xl border border-line bg-white p-1 text-sm" role="group" aria-label="Date range">
+              {([7, 30, 0] as const).map((r) => (
+                <button key={r} aria-pressed={range === r} onClick={() => setRange(r)} className={`rounded-lg px-3 py-1 ${range === r ? "bg-ink text-white" : "text-muted hover:text-ink"}`}>
+                  {r ? `Last ${r} days` : "All time"}
+                </button>
+              ))}
+            </div>
+          </div>
         </header>
 
         {error && !gtm && <p className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">Couldn&apos;t load insights: {error}</p>}
 
         {!gtm && !error ? (
           <div className="rounded-2xl border border-line bg-white px-6 py-12 text-center text-sm text-muted">Loading insights…</div>
-        ) : !gtm ? null : leads.length === 0 ? (
+        ) : !gtm ? null : all.length === 0 ? (
           <Empty title="Nothing to measure yet">As soon as your agent finds leads and sends its first emails, you&apos;ll see what&apos;s getting replies here.</Empty>
         ) : (
           <div className="space-y-6">
@@ -135,8 +158,29 @@ export default function InsightsPage() {
                 <div key={k.label} className="rounded-2xl border border-line bg-white p-4">
                   <p className="text-xs font-medium uppercase tracking-wider text-muted">{k.label}</p>
                   <p className="mt-1 text-2xl font-semibold tabular-nums">{k.value}</p>
+                  <p className="text-xs text-muted">{k.sub}</p>
                 </div>
               ))}
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card title="Leads found per day" sub="Companies your agent added over the last two weeks.">
+                <div className="flex h-36 items-end gap-1.5" role="img" aria-label={`Leads per day: ${days.map((d) => `${d.label} ${d.n}`).join(", ")}`}>
+                  {days.map((d) => (
+                    <div key={d.key} className="flex h-full flex-1 flex-col items-center justify-end gap-1" title={`${d.label}: ${d.n}`}>
+                      {d.n > 0 && <span className="text-[10px] tabular-nums text-muted">{d.n}</span>}
+                      <div className="w-full rounded-t-md bg-accent" style={{ height: `${(100 * d.n) / dmax}%`, minHeight: d.n ? 4 : 1, opacity: d.n ? 1 : 0.25 }} />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-1 flex justify-between text-[10px] text-muted">
+                  <span>{days[0].label}</span>
+                  <span>Today</span>
+                </div>
+              </Card>
+              <Card title="Lead source performance" sub="Where each lead came from, and how often it turned into a reply.">
+                <RateTable rows={bySource} first="Source" />
+              </Card>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">

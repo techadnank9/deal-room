@@ -119,10 +119,10 @@ export async function researchAccount(url: string): Promise<{ sources: ResearchS
 }
 
 /** Live search used by the analyst to check a claim. */
-export async function searchWeb(query: string): Promise<{ sources: ResearchSource[]; provider: string }> {
+export async function searchWeb(query: string, num = 4): Promise<{ sources: ResearchSource[]; provider: string }> {
   if (!telemEnabled()) return { sources: [], provider: "mock" };
   try {
-    return { sources: await telemSearch(query, 4), provider: "telem" };
+    return { sources: await telemSearch(query, num), provider: "telem" };
   } catch (err) {
     console.error("[telem] search failed:", err instanceof Error ? err.message : err);
     return { sources: [], provider: "mock" };

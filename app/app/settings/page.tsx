@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Btn, Empty, Pill, post, usePoll, type WorkspaceInfo } from "@/components/app/ui";
+import { Btn, Empty, Pill, post, usePoll, type Gtm, type WorkspaceInfo } from "@/components/app/ui";
+import { DEFAULT_PREFS, type Prefs } from "@/lib/gtm/types";
 
 type Mailbox = { id: string; email: string; fromName: string; dailyCap: number; warmupStart?: string; status: string; smtpHost: string };
 type Preset = { id: string; label: string; help: string };
@@ -56,7 +57,7 @@ function Status({ msg }: { msg: { ok: boolean; text: string } | null }) {
 export default function SettingsPage() {
   const { data: me, error, reload } = usePoll<WorkspaceInfo>("/api/workspace", 0);
   return (
-    <div className="px-8 py-6">
+    <div className="px-4 py-6 md:px-8">
       <div className="mx-auto max-w-[1200px]">
         <header className="mb-6">
           <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
@@ -79,11 +80,17 @@ export default function SettingsPage() {
                       <span className="text-muted">No website set yet</span>
                     )}
                   </p>
-                  <Link href="/app/agent?tab=sources" className={Btn.ghost}>
-                    Edit targeting
-                  </Link>
+                  <div className="flex gap-2">
+                    <Link href="/app/agent?tab=campaign" className={Btn.ghost}>
+                      What the writer knows
+                    </Link>
+                    <Link href="/app/agent?tab=sources" className={Btn.ghost}>
+                      Edit targeting
+                    </Link>
+                  </div>
                 </div>
               </Section>
+              <Preferences />
               <Billing me={me} />
               <Account email={me.email} />
             </>
@@ -93,6 +100,50 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function Toggle({ on, onChange, label, sub }: { on: boolean; onChange: (v: boolean) => void; label: string; sub: string }) {
+  return (
+    <label className="flex cursor-pointer items-start justify-between gap-4 py-3">
+      <span>
+        <span className="block text-sm font-medium">{label}</span>
+        <span className="block text-sm text-muted">{sub}</span>
+      </span>
+      <input type="checkbox" role="switch" checked={on} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
+      <span aria-hidden className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition peer-focus-visible:ring-2 peer-focus-visible:ring-ink ${on ? "bg-accent" : "bg-line"}`}>
+        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+      </span>
+    </label>
+  );
+}
+
+function Preferences() {
+  const { data, reload } = usePoll<Gtm>("/api/gtm", 0);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const p: Prefs = { ...DEFAULT_PREFS, ...(data?.state.prefs ?? {}) };
+  async function set(patch: Partial<Prefs>) {
+    setMsg(null);
+    try {
+      await post("/api/gtm", { action: "prefs", prefs: patch });
+      await reload();
+      setMsg({ ok: true, text: "Saved." });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not save" });
+    }
+  }
+  return (
+    <Section id="prefs" title="Company preferences" sub="How the agent treats new leads. Changes apply to leads found from now on.">
+      {!data ? (
+        <p className="text-sm text-muted">Loading…</p>
+      ) : (
+        <div className="divide-y divide-line">
+          <Toggle on={p.autoEnrich} onChange={(v) => void set({ autoEnrich: v })} label="Find emails automatically" sub="Look up and verify the right people's emails for every new lead. Each lookup uses credits. Off: you press “Find email” on the leads you want." />
+          <Toggle on={p.personaOnly} onChange={(v) => void set({ personaOnly: v })} label="Only write to people who match a persona" sub="The agent drafts emails only for people whose role matches one of your personas. Off: it also writes to the most senior person it found." />
+        </div>
+      )}
+      <Status msg={msg} />
+    </Section>
   );
 }
 

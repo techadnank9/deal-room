@@ -1,8 +1,8 @@
 // Workspaces, accounts and sessions. One workspace = one company the agent sells for.
 // Passwords are scrypt-hashed; sessions are random tokens in an httpOnly cookie.
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { db } from "./db";
+import { db, kvGet, kvSet } from "./db";
 
 export const SESSION_COOKIE = "dr_session";
 
@@ -208,4 +208,45 @@ export async function resolveScope(requested?: string | null): Promise<{ domain:
   const rows = await (await db()).all<{ url: string | null }>(`select url from workspaces where url is not null`);
   if (rows.some((r) => workspaceDomain(r) === want)) return { error: "This company belongs to a workspace. Log in to see it.", status: 403 };
   return { domain: requested, workspace: null };
+}
+
+/* ---------- API keys (MCP / API access to one workspace) ---------- */
+
+const keyHash = (key: string) => createHash("sha256").update(`dr-key-v1|${key.trim()}`).digest("hex");
+
+/** Make a new key for this workspace (the old one stops working). The key itself is shown once and never stored. */
+export async function rotateApiKey(workspaceId: string): Promise<{ key: string; hint: string; createdAt: string }> {
+  const old = await kvGet<{ hash: string }>(`apikey-of:${workspaceId}`);
+  if (old?.hash) await kvSet(`apikey:${old.hash}`, null);
+  const key = `dr_${randomBytes(24).toString("hex")}`;
+  const hash = keyHash(key);
+  const meta = { hash, hint: key.slice(-4), createdAt: new Date().toISOString() };
+  await kvSet(`apikey:${hash}`, { workspaceId });
+  await kvSet(`apikey-of:${workspaceId}`, meta);
+  return { key, hint: meta.hint, createdAt: meta.createdAt };
+}
+
+export async function revokeApiKey(workspaceId: string) {
+  const old = await kvGet<{ hash: string }>(`apikey-of:${workspaceId}`);
+  if (old?.hash) await kvSet(`apikey:${old.hash}`, null);
+  await kvSet(`apikey-of:${workspaceId}`, null);
+}
+
+export async function apiKeyInfo(workspaceId: string): Promise<{ hint: string; createdAt: string } | null> {
+  const m = await kvGet<{ hint: string; createdAt: string }>(`apikey-of:${workspaceId}`);
+  return m?.hint ? { hint: m.hint, createdAt: m.createdAt } : null;
+}
+
+export async function workspaceForKey(key: string | null | undefined): Promise<Workspace | null> {
+  if (!key?.startsWith("dr_")) return null;
+  const hit = await kvGet<{ workspaceId: string }>(`apikey:${keyHash(key)}`);
+  return hit?.workspaceId ? getWorkspace(hit.workspaceId) : null;
+}
+
+/** The workspace that owns this company domain, if any. */
+export async function ownerOfDomain(domain: string): Promise<string | null> {
+  const want = workspaceDomain({ url: domain });
+  if (!want) return null;
+  const rows = await (await db()).all<{ id: string; url: string | null }>(`select id, url from workspaces where url is not null`);
+  return rows.find((r) => workspaceDomain(r) === want)?.id ?? null;
 }

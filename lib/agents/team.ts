@@ -122,6 +122,8 @@ export async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
     t.targeting ??= cur.targeting;
     t.campaign ??= cur.campaign;
     t.knowledge ??= cur.knowledge;
+    t.lists ??= cur.lists;
+    t.prefs ??= cur.prefs;
     t.leads.sort((x, y) => y.at.localeCompare(x.at));
   }
   // GTM data is never dropped, even by a replace (prune/setup) that raced with the ICP or competitor builders.
@@ -136,6 +138,8 @@ export async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
       t.targeting ??= now.targeting;
       t.campaign ??= now.campaign;
       t.knowledge ??= now.knowledge;
+      t.lists ??= now.lists;
+      t.prefs ??= now.prefs;
       const seenA = new Set((t.activity ?? []).map((a) => a.id));
       t.activity = [...(t.activity ?? []), ...(now.activity ?? []).filter((a) => !seenA.has(a.id))].sort((x, y) => y.at.localeCompare(x.at)).slice(0, 300);
       const byId = new Map(now.leads.map((l) => [l.id, l]));

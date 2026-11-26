@@ -23,6 +23,10 @@ export type Contact = {
   previousCompanies?: string[];
   source: "glasser" | "inferred";
   confidence: number;
+  /** The seller's own list this person is filed under (one list per contact). */
+  list?: string;
+  /** Private notes from the seller. */
+  notes?: string;
 };
 
 export type Signal = { kind: "funding" | "hiring" | "launch" | "exec_hire" | "tech_change" | "expansion" | "other"; text: string; sourceUrl?: string };
@@ -165,4 +169,16 @@ export type TeamGtm = {
   icpSpec?: IcpSpec;
   competitors?: Competitor[];
   activity?: Activity[];
+  /** Named contact lists the seller made. */
+  lists?: string[];
+  /** Workspace preferences. */
+  prefs?: Prefs;
 };
+
+export type Prefs = {
+  /** Look up and verify emails for new leads automatically (uses credits). */
+  autoEnrich: boolean;
+  /** Only write emails to people who match one of the personas. */
+  personaOnly: boolean;
+};
+export const DEFAULT_PREFS: Prefs = { autoEnrich: true, personaOnly: true };

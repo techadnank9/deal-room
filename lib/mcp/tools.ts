@@ -1,3 +1,4 @@
+import { ownerOfDomain, type Workspace } from "../workspace";
 // Deal Room as an MCP connector: the same team (Maya, Arjun, Elena) and GTM engine the web app uses,
 // exposed as tools so the pipeline runs from inside Claude or ChatGPT.
 // Every tool names the seller's company; each company has its own room, exactly like the web app.
@@ -82,7 +83,7 @@ async function room(company: string): Promise<TeamState> {
   return loadTeam();
 }
 
-const NOT_SENT = "Deal Room does not deliver email or LinkedIn messages yet: an approved message is marked ready and the user sends it themselves.";
+const NOT_SENT = "An approved email is sent from the user's connected mailbox in their next sending window (if they connected one in Deal Room → Settings). LinkedIn notes are never sent automatically: the user sends those by hand.";
 
 export const TOOLS: Tool[] = [
   {
@@ -266,11 +267,16 @@ export const TOOLS: Tool[] = [
 ];
 
 /** Run one tool inside the seller's own room. A bare company name is looked up first, as on the web app. */
-export async function callTool(name: string, args: Args): Promise<Json> {
+/** ws = the workspace the caller's key belongs to (null without a key). A key pins every call to its own company;
+ *  without one, a company that belongs to a workspace is refused, so nobody can read or approve another customer's outreach. */
+export async function callTool(name: string, args: Args, ws: Workspace | null = null): Promise<Json> {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) throw new ToolError(`Unknown tool: ${name}`);
+  if (ws?.url) args = { ...args, company: ws.url };
   for (const k of tool.inputSchema.required) if (!args[k]?.toString().trim()) throw new ToolError(`Missing required argument: ${k}`);
   for (const k of Object.keys(args)) if (args[k] !== undefined && typeof args[k] !== "string") throw new ToolError(`Argument ${k} must be text.`);
   const company = await resolveCompanyUrl(args.company!);
+  const owner = await ownerOfDomain(company);
+  if (owner && owner !== ws?.id) throw new ToolError("This company has a Deal Room workspace. Connect with that workspace's own MCP link (Deal Room → MCP) to work on it.");
   return withCompany(company, () => withModel(undefined, () => tool.run({ ...args, company })));
 }

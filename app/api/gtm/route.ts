@@ -6,6 +6,7 @@ import { drain, topUp, usage } from "@/lib/sponsors/flexprice";
 import { mossEnabled } from "@/lib/sponsors/moss";
 import { withModel } from "@/lib/llm";
 import { resolveScope } from "@/lib/workspace";
+import { addProspects, fileContacts, prospectSearch, saveContactNotes, saveLists, savePrefs, type Prospect } from "@/lib/gtm/prospect";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,14 @@ export async function GET(req: Request) {
 
 type Body = {
   url?: string;
-  action: "intake" | "expansion" | "competitors" | "enrich" | "draft" | "touch" | "stage" | "search" | "topup" | "drain" | "reindex" | "personas" | "savePersonas" | "agentSettings" | "import" | "block" | "unblock" | "blocklist" | "bulk";
+  action: "intake" | "expansion" | "competitors" | "enrich" | "draft" | "touch" | "stage" | "search" | "topup" | "drain" | "reindex" | "personas" | "savePersonas" | "agentSettings" | "import" | "block" | "unblock" | "blocklist" | "bulk" | "prospect" | "addProspects" | "lists" | "file" | "notes" | "prefs";
+  prospects?: Prospect[];
+  lists?: string[];
+  items?: { leadId: string; contactId: string }[];
+  list?: string;
+  contactId?: string;
+  notes?: string;
+  prefs?: Partial<import("@/lib/gtm/types").Prefs>;
   targeting?: import("@/lib/gtm/types").Targeting;
   campaign?: import("@/lib/gtm/types").CampaignSettings;
   knowledge?: import("@/lib/gtm/types").Knowledge;
@@ -105,6 +113,21 @@ export async function POST(req: Request) {
           return Response.json({ state: await savePersonas(b.personas ?? [], Boolean(b.confirm)) });
         case "reindex":
           return Response.json({ indexed: await reindexAll() });
+        case "prospect":
+          return Response.json(await prospectSearch(b.q ?? ""));
+        case "addProspects": {
+          const added = await addProspects(b.prospects ?? []);
+          if (added.length) void import("@/lib/gtm/engine").then((m) => m.onLeadsFound(added)).catch(() => {});
+          return Response.json({ added: added.length, state: await loadTeam() });
+        }
+        case "lists":
+          return Response.json({ state: await saveLists(b.lists ?? []) });
+        case "file":
+          return Response.json({ state: await fileContacts(b.items ?? [], b.list ?? "") });
+        case "notes":
+          return Response.json({ state: await saveContactNotes(b.leadId!, b.contactId!, b.notes ?? "") });
+        case "prefs":
+          return Response.json({ state: await savePrefs(b.prefs ?? {}) });
         case "drain":
           return Response.json({ balance: await drain() });
         default:
