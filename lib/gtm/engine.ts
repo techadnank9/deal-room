@@ -318,7 +318,16 @@ export async function draftSequence(leadId: string, opts: { enrich?: boolean } =
     t = await enrichLead(leadId);
     l = t.leads.find((x) => x.id === leadId)!;
   }
-  const who = l.contacts?.find((c) => c.persona && c.email && c.emailStatus !== "no-mx") ?? l.contacts?.find((c) => c.emailStatus !== "no-mx") ?? l.contacts?.[0];
+  // Pick the person whose title is highest in their persona's title list (a persona lists its best titles first).
+  const rankOf = (c: Contact) => {
+    const p = (t.personas ?? []).find((x) => x.label === c.persona);
+    if (!p) return 99;
+    const tl = c.title.toLowerCase();
+    const i = p.titles.findIndex((x) => tl.includes(x.toLowerCase()) || x.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 2).every((w) => tl.includes(w)));
+    return i === -1 ? 50 : i;
+  };
+  const usable = (l.contacts ?? []).filter((c) => c.email && c.emailStatus !== "no-mx" && c.emailStatus !== "invalid");
+  const who = [...usable].sort((a, b) => rankOf(a) - rankOf(b) || Number(b.emailStatus === "verified") - Number(a.emailStatus === "verified"))[0] ?? l.contacts?.[0];
   const persona = t.icpSpec?.personas.find((p) => who?.title && who.title.toLowerCase().includes(p.function.toLowerCase())) ?? t.icpSpec?.personas[0];
   // The confirmed persona this person matches: its pains, angle and ask shape the email.
   const buyer = (t.personas ?? []).find((p) => p.enabled && p.label === who?.persona) ?? (t.personas ?? []).find((p) => p.enabled);
