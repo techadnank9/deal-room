@@ -106,13 +106,39 @@ export function targetTitles(t: { personas?: Persona[]; icpSpec?: { personas: { 
 }
 
 /** Which persona a job title matches (simple word overlap, excludes first). */
+const ABBR: Record<string, string> = {
+  ceo: "chief executive officer",
+  cto: "chief technology officer",
+  cfo: "chief financial officer",
+  coo: "chief operating officer",
+  cmo: "chief marketing officer",
+  cpo: "chief product officer",
+  cro: "chief revenue officer",
+  ciso: "chief information security officer",
+  cio: "chief information officer",
+  svp: "senior vice president",
+  evp: "executive vice president",
+  vp: "vice president",
+  qa: "quality assurance",
+  hr: "human resources",
+  eng: "engineering",
+  "r&d": "research and development",
+};
+/** Lowercase and spell out common abbreviations so "CTO" matches "Chief Technology Officer". */
+function expandTitle(t: string) {
+  return ` ${t.toLowerCase()} `
+    .replace(/[,/|()]/g, " ")
+    .replace(/\b(ceo|cto|cfo|coo|cmo|cpo|cro|ciso|cio|svp|evp|vp|qa|hr|eng|r&d)\b/g, (m) => ABBR[m] ?? m)
+    .replace(/\s+/g, " ");
+}
+
 export function matchPersona(title: string, personas: Persona[]): Persona | null {
-  const tl = title.toLowerCase();
+  const tl = expandTitle(title);
   let best: { p: Persona; s: number } | null = null;
   for (const p of personas.filter((x) => x.enabled)) {
-    if (p.excludeTitles.some((x) => x && tl.includes(x.toLowerCase()))) continue;
+    if (p.excludeTitles.some((x) => x && tl.includes(expandTitle(x).trim()))) continue;
     for (const want of p.titles) {
-      const words = want.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 2);
+      const words = expandTitle(want).split(/[^a-z]+/).filter((w) => w.length > 2 && !["and", "the", "for", "head"].includes(w));
       const hit = words.filter((w) => tl.includes(w)).length / Math.max(1, words.length);
       if (hit > (best?.s ?? 0.49)) best = { p, s: hit };
     }

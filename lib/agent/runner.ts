@@ -173,6 +173,11 @@ async function runDrafts(ws: Workspace, s: AgentState) {
       for (const m of lead?.sequence ?? []) if (m.channel === "email" && m.to && m.approval === "pending") await decideTouch(l.id, m.id, "approve");
     }
   }
+  if (ws.settings.autopilot) {
+    // Autopilot approves every waiting email, including ones written right after enrichment.
+    const now = await loadTeam();
+    for (const l of now.leads) for (const m of l.sequence ?? []) if (m.channel === "email" && m.to && m.approval === "pending") await decideTouch(l.id, m.id, "approve");
+  }
   if (ready.length) note(s, `Wrote sequences for ${ready.map((l) => l.company).join(", ")}${ws.settings.autopilot ? " (autopilot: approved)" : " (waiting for your approval)"}`);
 }
 
@@ -356,7 +361,10 @@ export async function tickOnce() {
 
 /** Start the one-minute tick (once per server process). */
 export function startAgent() {
-  if (g.__agentTick || process.env.AGENT_DISABLED === "1") return;
+  // One scheduler per database: production runs it; a local dev server only when AGENT_RUNNER=1
+  // (local and live share the same database, and two schedulers could send the same email twice).
+  const on = process.env.AGENT_RUNNER === "1" || (process.env.NODE_ENV === "production" && process.env.AGENT_RUNNER !== "0");
+  if (g.__agentTick || !on) return;
   g.__agentTick = setInterval(() => void tickOnce().catch((e) => console.error("[agent] tick", e)), 60e3);
   setTimeout(() => void tickOnce().catch(() => {}), 15e3);
   console.log("[agent] scheduler started");
