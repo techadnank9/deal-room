@@ -34,6 +34,11 @@ export default function Login() {
           <span className="mb-1 block font-medium">Password</span>
           <input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-xl border border-line bg-white px-3 py-2.5 outline-none focus:border-ink" />
         </label>
+        <p className="-mt-2 text-right text-xs">
+          <Link href="/forgot" className="text-muted underline hover:text-ink">
+            Forgot password?
+          </Link>
+        </p>
         {error && <p className="text-sm text-rose-600">{error}</p>}
         <button disabled={busy} className="w-full rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50">
           {busy ? "Logging in…" : "Log in"}

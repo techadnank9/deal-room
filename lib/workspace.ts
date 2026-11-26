@@ -252,3 +252,33 @@ export async function ownerOfDomain(domain: string): Promise<string | null> {
   const rows = await (await db()).all<{ id: string; url: string | null }>(`select id, url from workspaces where url is not null`);
   return rows.find((r) => workspaceDomain(r) === want)?.id ?? null;
 }
+
+/* ---------- password reset ---------- */
+
+const tokenKey = (token: string) => `pwreset:${createHash("sha256").update(token).digest("hex")}`;
+
+/** A one-hour reset token for an existing account (null if there is no such account or one was sent < 2 min ago). */
+export async function createResetToken(rawEmail: string): Promise<string | null> {
+  const email = normalizeEmail(rawEmail);
+  const rows = await (await db()).all<{ email: string }>(`select email from accounts where email = ?`, [email]);
+  if (!rows.length) return null;
+  const recent = await kvGet<{ at: number }>(`pwreset-rate:${email}`);
+  if (recent && Date.now() - recent.at < 2 * 60e3) return null;
+  await kvSet(`pwreset-rate:${email}`, { at: Date.now() });
+  const token = randomBytes(32).toString("hex");
+  await kvSet(tokenKey(token), { email, exp: Date.now() + 3600e3 });
+  return token;
+}
+
+/** Set a new password with a reset token; signs the account out everywhere. */
+export async function resetPassword(token: string, password: string): Promise<{ ok: true } | { error: string }> {
+  if (password.length < 8) return { error: "Use at least 8 characters." };
+  const k = tokenKey(token.trim());
+  const hit = await kvGet<{ email: string; exp: number }>(k);
+  if (!hit?.email || hit.exp < Date.now()) return { error: "This link has expired or was already used. Ask for a new one." };
+  const d = await db();
+  await d.exec(`update accounts set pass_hash = ? where email = ?`, [hash(password), hit.email]);
+  await d.exec(`delete from auth_sessions where email = ?`, [hit.email]);
+  await kvSet(k, null);
+  return { ok: true };
+}
