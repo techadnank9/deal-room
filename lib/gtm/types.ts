@@ -17,7 +17,8 @@ export type Contact = {
   name: string;
   title: string;
   email?: string;
-  emailStatus: "mx-valid" | "no-mx" | "guessed" | "unknown";
+  emailStatus: "verified" | "risky" | "invalid" | "mx-valid" | "no-mx" | "guessed" | "unknown";
+  persona?: string;
   linkedin?: string;
   previousCompanies?: string[];
   source: "glasser" | "inferred";
@@ -40,6 +41,7 @@ export type Touch = {
   draftedBy: string;
   decidedAt?: string;
   sentAt?: string;
+  messageId?: string;
   citations?: string[];
 };
 
@@ -101,7 +103,30 @@ export type Activity = {
 
 export type Intake = { product: string; customers: string; pricing: string; constraints: string };
 
+export type Persona = {
+  id: string;
+  label: string;
+  role: "champion" | "economic_buyer" | "user" | "blocker";
+  titles: string[];
+  excludeTitles: string[];
+  seniority: string[];
+  departments: string[];
+  /** Company sizes where this person is the one to contact, e.g. "50-500". */
+  companySize: string;
+  pains: string[];
+  triggers: string[];
+  /** Where they show up: competitors whose posts they engage with, keywords they follow. */
+  watch: { competitors: string[]; keywords: string[] };
+  angle: string;
+  cta: string;
+  evidence: { text: string; url: string }[];
+  confidence: number;
+  enabled: boolean;
+};
+
 export type TeamGtm = {
+  personas?: Persona[];
+  personasConfirmed?: boolean;
   /** The rep's first name (from the team room); outreach is signed by them, not by the agent. */
   rep?: string;
   intake?: Intake;

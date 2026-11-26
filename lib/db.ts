@@ -35,6 +35,16 @@ create table if not exists events (
 );
 create table if not exists sessions (id text primary key, state text not null, updated_at text not null);
 create table if not exists kv (k text primary key, v text not null);
+
+create table if not exists workspaces (id text primary key, owner_email text not null, name text, url text, plan text not null default 'trial', trial_ends text, settings text not null default '{}', created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
+create table if not exists accounts (email text primary key, pass_hash text not null, name text, workspace_id text not null, created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
+create table if not exists auth_sessions (token text primary key, email text not null, workspace_id text not null, expires_at text not null);
+create table if not exists mailboxes (id text primary key, workspace_id text not null, data text not null, last_uid integer not null default 0, status text not null default 'ok', created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
+create table if not exists outbox (id text primary key, workspace_id text not null, lead_id text, touch_id text, mailbox_id text, to_email text not null, subject text, body text not null, in_reply_to text, scheduled_at text not null, status text not null default 'queued', message_id text, sent_at text, error text, created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
+create index if not exists outbox_due on outbox (status, scheduled_at);
+create table if not exists inbound (id text primary key, workspace_id text not null, mailbox_id text, message_id text, in_reply_to text, from_email text, subject text, text text, clean text, category text, lead_id text, draft text, received_at text, handled integer not null default 0);
+create table if not exists suppression (workspace_id text not null, email text not null, reason text, at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')), primary key (workspace_id, email));
+create table if not exists usage_daily (workspace_id text not null, day text not null, leads int not null default 0, enrich int not null default 0, sends int not null default 0, runs int not null default 0, primary key (workspace_id, day));
 `;
 
 const PG_SCHEMA = `
@@ -51,6 +61,16 @@ create table if not exists events (
 );
 create table if not exists sessions (id text primary key, state text not null, updated_at timestamptz not null default now());
 create table if not exists kv (k text primary key, v text not null);
+
+create table if not exists workspaces (id text primary key, owner_email text not null, name text, url text, plan text not null default 'trial', trial_ends timestamptz, settings text not null default '{}', created_at timestamptz not null default now());
+create table if not exists accounts (email text primary key, pass_hash text not null, name text, workspace_id text not null, created_at timestamptz not null default now());
+create table if not exists auth_sessions (token text primary key, email text not null, workspace_id text not null, expires_at timestamptz not null);
+create table if not exists mailboxes (id text primary key, workspace_id text not null, data text not null, last_uid bigint not null default 0, status text not null default 'ok', created_at timestamptz not null default now());
+create table if not exists outbox (id text primary key, workspace_id text not null, lead_id text, touch_id text, mailbox_id text, to_email text not null, subject text, body text not null, in_reply_to text, scheduled_at timestamptz not null, status text not null default 'queued', message_id text, sent_at timestamptz, error text, created_at timestamptz not null default now());
+create index if not exists outbox_due on outbox (status, scheduled_at);
+create table if not exists inbound (id text primary key, workspace_id text not null, mailbox_id text, message_id text, in_reply_to text, from_email text, subject text, text text, clean text, category text, lead_id text, draft text, received_at timestamptz, handled boolean not null default false);
+create table if not exists suppression (workspace_id text not null, email text not null, reason text, at timestamptz not null default now(), primary key (workspace_id, email));
+create table if not exists usage_daily (workspace_id text not null, day text not null, leads int not null default 0, enrich int not null default 0, sends int not null default 0, runs int not null default 0, primary key (workspace_id, day));
 `;
 
 export const SQLITE_PATH = process.env.SQLITE_PATH || path.join(process.cwd(), "data", "dealroom.db");

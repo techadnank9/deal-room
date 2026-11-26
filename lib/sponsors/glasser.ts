@@ -110,3 +110,34 @@ export async function enrichCompany(domain: string, titles?: string[]): Promise<
   for (const f of failures) console.error("[glasser]", f.reason instanceof Error ? f.reason.message : f.reason);
   return { data, provider: failures.length === 3 ? "mock" : "glasser" };
 }
+
+export type EmailCheck = { email: string; status: "verified" | "risky" | "invalid" | "unknown"; catchAll: boolean; score?: number };
+
+/** Find a person's work email (provider waterfall behind Glasser), then verify it. */
+export async function findEmail(fullName: string, domain: string): Promise<EmailCheck | null> {
+  if (!glasserEnabled() || fullName.trim().split(/\s+/).length < 2) return null;
+  try {
+    const o = (await runSolution("/v1/solutions/gtm/people_search", { action: "find_email", full_name: fullName, company_domain: domain })) as Record<string, unknown> | null;
+    const email = typeof o?.email === "string" ? o.email : "";
+    if (!email) return null;
+    return await verifyEmail(email);
+  } catch (err) {
+    console.error("[glasser] find_email", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+export async function verifyEmail(email: string): Promise<EmailCheck> {
+  if (!glasserEnabled()) return { email, status: "unknown", catchAll: false };
+  try {
+    const o = (await runSolution("/v1/solutions/gtm/people_search", { action: "verify_email", email })) as Record<string, unknown> | null;
+    const st = String(o?.email_status ?? "").toLowerCase();
+    const catchAll = Boolean(o?.email_catch_all);
+    const score = typeof o?.hunter_email_score === "number" ? o.hunter_email_score : undefined;
+    const status = st === "valid" ? (catchAll ? "risky" : "verified") : st === "invalid" ? "invalid" : st === "accept_all" || st === "risky" ? "risky" : "unknown";
+    return { email, status, catchAll, score };
+  } catch (err) {
+    console.error("[glasser] verify_email", err instanceof Error ? err.message : err);
+    return { email, status: "unknown", catchAll: false };
+  }
+}

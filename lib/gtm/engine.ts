@@ -3,7 +3,8 @@ import { promises as dns } from "node:dns";
 import { arr, enm, int, llmJSON, obj, str } from "../llm";
 import { loadTeam, saveTeam, type Lead, type TeamState } from "../agents/team";
 import { searchWeb } from "../sponsors/telem";
-import { enrichCompany } from "../sponsors/glasser";
+import { enrichCompany, findEmail } from "../sponsors/glasser";
+import { matchPersona, targetTitles } from "./personas";
 import { canSpend, meter, PRICES } from "../sponsors/flexprice";
 import { indexDocs, mossAnswer, search } from "../sponsors/moss";
 import type { Activity, Actor, Competitor, Contact, IcpSpec, Intake, Signal, Stage, Touch } from "./types";
@@ -166,7 +167,7 @@ export async function enrichLead(leadId: string, actor: Actor = "agent"): Promis
     return t;
   }
   log(t, { actor, who: actor === "agent" ? "Maya" : "You", kind: "enrich", text: `Enriching ${l.company}: company record, decision-makers, email deliverability`, leadId });
-  const titles = t.icpSpec?.personas.map((p) => p.title);
+  const titles = targetTitles(t);
   const [e, mx, research] = await Promise.all([
     enrichCompany(l.domain, titles).catch(() => null),
     mxValid(l.domain),
@@ -192,6 +193,18 @@ export async function enrichLead(leadId: string, actor: Actor = "agent"): Promis
     };
   });
   log(t, { actor: "agent", who: "Maya", kind: "search", text: `${l.company}: Glasser returned ${people.length} decision-makers; resolved ${resolved.filter((r) => r?.fullName).length} full names from public profiles`, leadId });
+  // Persona match first, then a verified email for the best 2 matches (find + verify through the provider waterfall).
+  const personas = t.personas ?? [];
+  for (const c of contacts) c.persona = matchPersona(c.title, personas)?.label;
+  contacts.sort((a, b) => Number(!!b.persona) - Number(!!a.persona));
+  for (const c of contacts.filter((x) => x.name.includes(" ")).slice(0, 2)) {
+    const found = await findEmail(c.name, l.domain);
+    if (found) {
+      c.email = found.email;
+      c.emailStatus = found.status === "unknown" ? c.emailStatus : found.status;
+      c.confidence = found.status === "verified" ? 0.95 : found.status === "risky" ? 0.6 : 0.2;
+    }
+  }
 
   const { data } = await llmJSON<{
     industry: string;
@@ -353,10 +366,8 @@ export async function decideTouch(leadId: string, touchId: string, decision: "ap
   } else {
     m.approval = "approved";
     m.decidedAt = new Date().toISOString();
-    m.sentAt = m.decidedAt; // queued for delivery; this demo does not send real mail
-    await meter("outreach_sent", { lead: l.domain, channel: m.channel, variant: m.variant }, `${l.company} ${m.channel}`);
-    log(t, { actor: "rep", who: "You", kind: "approve", text: `Approved and queued ${m.channel} step ${m.step} to ${m.to ?? l.company}. Charged $${PRICES.outreach_sent.toFixed(2)}`, leadId });
-    if (m.step === 1 && ["matched"].includes(stageOf(l))) setStage(t, l, "contacted", "rep", "You", "approved Arjun's first touch");
+    // Approved emails are sent by the agent's sender in your sending window (lib/agent/runner.ts), from your mailbox.
+    log(t, { actor: "rep", who: "You", kind: "approve", text: `Approved ${m.channel} step ${m.step} to ${m.to ?? l.company}; it goes out in your next sending window`, leadId });
   }
   await saveTeam(t);
   return t;
@@ -572,4 +583,30 @@ export async function recallAnswer(question: string, speaker: { name: string; ro
   log(t, { actor: "agent", who: speaker.name, kind: "search", text: `Voice: Moss recalled ${facts.length} facts in ${r.ms} ms${model ? `, answered by ${model} in ${inferMs} ms` : ""} for "${question.slice(0, 60)}"`, ms: r.ms });
   await saveTeam(t);
   return { line, recall };
+}
+
+/** Called by the sender after an email really goes out. */
+export async function markTouchSent(leadId: string, touchId: string, messageId: string) {
+  const t = await loadTeam();
+  const l = t.leads.find((x) => x.id === leadId);
+  const m = l?.sequence?.find((x) => x.id === touchId);
+  if (!l || !m) return;
+  m.sentAt = new Date().toISOString();
+  m.messageId = messageId;
+  await meter("outreach_sent", { lead: l.domain, channel: m.channel, variant: m.variant }, `${l.company} ${m.channel}`);
+  log(t, { actor: "agent", who: "Arjun", kind: "approve", text: `Sent ${m.channel} step ${m.step} to ${m.to}. Charged $${PRICES.outreach_sent.toFixed(2)}`, leadId });
+  if (m.step === 1 && stageOf(l) === "matched") setStage(t, l, "contacted", "agent", "Arjun", "first email sent");
+  await saveTeam(t);
+}
+
+/** A person replied: stop the sequence, move the lead, record why. */
+export async function markReplied(leadId: string, category: string, snippet: string) {
+  const t = await loadTeam();
+  const l = t.leads.find((x) => x.id === leadId);
+  if (!l) return;
+  for (const m of l.sequence ?? []) if (!m.sentAt && m.approval !== "rejected") m.approval = "rejected";
+  if (["interested", "not_now", "other"].includes(category) && ["matched", "contacted"].includes(stageOf(l))) setStage(t, l, "replied", "agent", "Elena", category.replace("_", " "));
+  if (category === "unsubscribe" || category === "not_interested") setStage(t, l, "lost", "agent", "Elena", category.replace("_", " "));
+  log(t, { actor: "agent", who: "Elena", kind: "stage", text: `${l.company} replied (${category.replace("_", " ")}): "${snippet.slice(0, 90)}"`, leadId });
+  await saveTeam(t);
 }

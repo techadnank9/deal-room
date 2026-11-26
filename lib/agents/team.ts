@@ -56,6 +56,10 @@ export type TeamState = {
 
 // Every company gets its own room: requests run inside withCompany(domain), and load/save use that company's key.
 const companyScope = new AsyncLocalStorage<string>();
+/** The company domain the current request or job runs for. */
+export function currentCompany() {
+  return companyScope.getStore() ?? "";
+}
 export function withCompany<T>(urlOrDomain: string | undefined, fn: () => Promise<T>): Promise<T> {
   const d = urlOrDomain?.trim() ? domainOf(urlOrDomain.trim()).toLowerCase() : "";
   return d ? companyScope.run(d, fn) : fn();
@@ -523,6 +527,8 @@ export async function teamSetup(
       .then(async (m) => {
         await m.buildIcp(intake);
         await m.mapCompetitors();
+        const { generatePersonas } = await import("../gtm/personas");
+        await generatePersonas();
       })
       .catch((e) => console.error("[gtm] auto ICP", e));
   }

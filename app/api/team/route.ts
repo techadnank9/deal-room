@@ -1,21 +1,25 @@
 import { bookMeeting, loadTeam, removeLead, pruneCompetitors, teamSetup, teamTurn, withCompany } from "@/lib/agents/team";
 import { writeEvents } from "@/lib/db";
 import { withModel } from "@/lib/llm";
+import { resolveScope } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // ?url= / body.url names your company: each company has its own team room.
 export async function GET(req: Request) {
-  const url = new URL(req.url).searchParams.get("url") ?? undefined;
-  return Response.json(await withCompany(url, loadTeam));
+  const scope = await resolveScope(new URL(req.url).searchParams.get("url"));
+  if ("error" in scope) return Response.json({ error: scope.error }, { status: scope.status });
+  return Response.json(await withCompany(scope.domain, loadTeam));
 }
 
 /** Talk to your team. The right teammate answers and does the work. */
 export async function POST(req: Request) {
   const body = (await req.json()) as { url?: string; setupUrl?: string; auto?: boolean };
   // You talking: the fast top model (default). Background work (lead picks, emails): the deepest model, since nobody waits on it.
-  return withCompany(body.setupUrl || body.url, () => withModel(body.auto ? "gpt-6.2-astra" : undefined, () => handle(body)));
+  const scope = await resolveScope(body.setupUrl || body.url);
+  if ("error" in scope) return Response.json({ error: scope.error }, { status: scope.status });
+  return withCompany(scope.domain, () => withModel(body.auto ? "gpt-6.2-astra" : undefined, () => handle(body)));
 }
 
 async function handle(body: unknown) {
