@@ -55,3 +55,20 @@ leads in Sources, Activity "scanned N, picked M, skipped X because Y", dashboard
 Editable sequence builder and AI templates with preview; Copilot "next 10 hours" editable queue; Slack reply alerts,
 HubSpot push, webhook; several agents per workspace. Billing: when Stripe goes live, send a renewal reminder and
 make cancel one click (their most common complaint).
+
+## Latest videos (last 2 months, 16 transcripts, Nov 26)
+New since the first pass: buy pre-warmed lookalike domains + 1-3 inboxes in-app; per-mailbox warm-up counter, signature,
+tracking and unsubscribe toggles (2-3/day start, 30/day max, no links); Slack reply alerts with team cover; MCP/ChatGPT/
+Grok/Claude can create agents and campaigns, reveal (0.5 credit) and enrich; Chrome extension (company employees, email/
+phone, tech stack, signals); website visitors (company reverse-IP, then ICP people, never mention the visit); stacked
+signals rank a lead higher; LinkedIn AI voice notes.
+
+### Built from this (Nov 26)
+Editable sequence (steps, days, AI / template / fixed text with variables, per-step instruction, reorder, reset,
+rewrite waiting drafts); template library with preview on a real lead; mailbox signature, editable daily limit and
+"sent X of Y today"; Slack reply alerts; signed outgoing webhook (lead.found, email.sent, reply.received); edit or
+cancel queued emails; stacked-signal ordering in Review; Search lookalikes + CSV export.
+
+### Still not built
+In-app domain/inbox purchase, Chrome extension, website visitors, several agents per workspace, team members,
+credit packs, LinkedIn automation (by choice).

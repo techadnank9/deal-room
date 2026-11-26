@@ -43,7 +43,7 @@ export type Gtm = {
 
 export type AgentInfo = {
   status: { runsToday: number; lastSourceAt: number | null; inWindow: boolean; nextWindow: string | null; log: { at: string; text: string }[] };
-  outbox: { id: string; lead_id: string | null; to_email: string; subject: string | null; status: string; scheduled_at: string; sent_at: string | null; error: string | null; touch_id: string | null }[];
+  outbox: { id: string; lead_id: string | null; to_email: string; subject: string | null; body?: string; status: string; scheduled_at: string; sent_at: string | null; error: string | null; touch_id: string | null }[];
 };
 
 export async function post<T = unknown>(url: string, body: unknown, method = "POST"): Promise<T> {

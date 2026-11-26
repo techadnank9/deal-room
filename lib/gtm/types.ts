@@ -154,7 +154,16 @@ export type CampaignSettings = {
   cta: string;
   followUpDays: number;
   linkedinStep: boolean;
+  /** A custom sequence. Empty = the default (first email, LinkedIn note, follow-up, closing email). */
+  steps?: StepPlan[];
 };
+
+/** One step of a custom sequence. mode: ai = the writer composes it; template = it follows one of your templates;
+ *  fixed = your exact text with {first_name} {company} {signal} {sender} {sender_company} filled in. */
+export type StepPlan = { id: string; channel: "email" | "linkedin"; dayOffset: number; mode: "ai" | "template" | "fixed"; templateId?: string; subject?: string; text?: string; instruction?: string };
+
+/** A reusable message template: structure to follow plus instructions for the writer. */
+export type Template = { id: string; name: string; slot: "first" | "follow_up" | "closing"; subject?: string; body: string; instructions: string };
 export const DEFAULT_CAMPAIGN: CampaignSettings = { language: "English", tone: "friendly", goal: "meeting", cta: "", followUpDays: 4, linkedinStep: true };
 
 export type Knowledge = { valueProp: string; pains: string; features: string; proof: string };
@@ -173,6 +182,8 @@ export type TeamGtm = {
   activity?: Activity[];
   /** Named contact lists the seller made. */
   lists?: string[];
+  /** Message templates the writer can follow. */
+  templates?: Template[];
   /** Workspace preferences. */
   prefs?: Prefs;
 };
@@ -188,5 +199,9 @@ export type Prefs = {
   postalAddress?: string;
   /** Also email addresses on catch-all domains (can't be verified; small bounce risk). Unverified guesses are never emailed. */
   allowCatchAll?: boolean;
+  /** Slack incoming-webhook URL: every reply is posted there with the drafted answer. */
+  slackWebhook?: string;
+  /** Your own endpoint: Deal Room POSTs lead events (lead.found, email.sent, reply.received) as JSON. */
+  webhookUrl?: string;
 };
 export const DEFAULT_PREFS: Prefs = { autoEnrich: true, personaOnly: true };

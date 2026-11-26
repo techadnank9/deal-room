@@ -8,6 +8,7 @@ import { ago, Btn, EmailBadge, Empty, Flames, host, inTime, leadState, Pill, pos
 import FitButtons from "@/components/app/FitButtons";
 import PreviewLeads from "@/components/app/PreviewLeads";
 import TraceView from "@/components/app/TraceView";
+import SequenceEditor from "@/components/app/SequenceEditor";
 import type { Lead } from "@/lib/agents/team";
 import type { Persona, Touch } from "@/lib/gtm/types";
 
@@ -46,7 +47,8 @@ export default function AgentPage() {
   if (!gtm || !me) return <p className="p-10 text-muted">Loading your agent…</p>;
   const t = gtm.state;
   const leads = [...t.leads].sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
-  const review = leads.filter((l) => leadState(l) === "review");
+  // Stacked signals first: a company showing several signals at once is the best one to email now.
+  const review = leads.filter((l) => leadState(l) === "review").sort((a, b) => (b.signals?.length ?? 0) - (a.signals?.length ?? 0) || (b.score ?? 0) - (a.score ?? 0));
   const ws = me.workspace;
   const box = boxes?.mailboxes[0];
   const ramping = isRamping(box?.warmupStart);
@@ -182,13 +184,8 @@ function Overview({ gtm, agent, leads, review, go, busy, runNow }: { gtm: Gtm; a
           <h2 className="mb-3 font-semibold">Coming up</h2>
           {queued.length ? (
             <ul className="divide-y divide-line text-sm">
-              {queued.slice(0, 8).map((o) => (
-                <li key={o.id} className="flex items-center justify-between gap-3 py-2">
-                  <span className="truncate">
-                    {o.subject ?? "(no subject)"} <span className="text-muted">→ {o.to_email}</span>
-                  </span>
-                  <span className="shrink-0 text-xs text-muted">{inTime(o.scheduled_at)}</span>
-                </li>
+              {queued.slice(0, 10).map((o) => (
+                <QueuedItem key={o.id} o={o} />
               ))}
             </ul>
           ) : (
@@ -198,6 +195,53 @@ function Overview({ gtm, agent, leads, review, go, busy, runNow }: { gtm: Gtm; a
         </section>
       </div>
     </div>
+  );
+}
+
+/** One queued email: see it, edit it, or cancel it before it goes out. */
+function QueuedItem({ o }: { o: AgentInfo["outbox"][number] }) {
+  const [open, setOpen] = useState(false);
+  const [subject, setSubject] = useState(o.subject ?? "");
+  const [body, setBody] = useState(o.body ?? "");
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "cancelled">("idle");
+  if (state === "cancelled") return <li className="py-2 text-xs text-muted">Cancelled: {o.to_email}</li>;
+  return (
+    <li className="py-2">
+      <button className="flex w-full items-center justify-between gap-3 text-left" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="truncate">
+          {o.subject || "(follow-up)"} <span className="text-muted">→ {o.to_email}</span>
+        </span>
+        <span className="shrink-0 text-xs text-muted">{inTime(o.scheduled_at)}</span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {o.subject !== null && o.subject !== "" && <input aria-label="Subject" className="w-full rounded-lg border border-line px-2.5 py-1.5 text-sm" value={subject} onChange={(e) => setSubject(e.target.value)} />}
+          <textarea aria-label="Body" rows={7} className="w-full rounded-lg border border-line px-2.5 py-1.5 text-sm" value={body} onChange={(e) => setBody(e.target.value)} />
+          <div className="flex items-center gap-2">
+            <button
+              className={Btn.dark}
+              disabled={state === "saving"}
+              onClick={async () => {
+                setState("saving");
+                await post("/api/agent", { action: "edit_queued", id: o.id, subject: o.subject ? subject : undefined, body });
+                setState("saved");
+              }}
+            >
+              {state === "saving" ? "Saving…" : state === "saved" ? "Saved" : "Save changes"}
+            </button>
+            <button
+              className="text-sm text-muted hover:text-rose-700"
+              onClick={async () => {
+                await post("/api/agent", { action: "cancel_queued", id: o.id });
+                setState("cancelled");
+              }}
+            >
+              Don&apos;t send
+            </button>
+          </div>
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -646,28 +690,10 @@ function Sources({ gtm, me, agent, busy, act, reload }: { gtm: Gtm; me: Workspac
 
 function Campaign({ leads, autopilot, t, reload }: { leads: Lead[]; autopilot: boolean; t: Gtm["state"]; reload: () => Promise<void> }) {
   const sample = leads.find((l) => l.sequence?.length);
-  const steps = [
-    { day: 0, ch: "Email", title: "First email", text: "Short, personal, names the exact signal and its source. Asks for a 15-minute call (variant A) or offers a 2-minute teardown (variant B)." },
-    { day: 1, ch: "LinkedIn", title: "Connection note", text: "Under 280 characters. Shown in Review for you to copy and send yourself." },
-    { day: t.campaign?.followUpDays ?? 4, ch: "Email", title: "Follow-up", text: "Same thread, a new angle, under 70 words. Only sent if they haven't replied." },
-  ];
   return (
     <div className="grid max-w-[1100px] gap-6 lg:grid-cols-[1fr_380px]">
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Sequence</h2>
-        {steps.map((s, i) => (
-          <div key={i} className="card flex gap-4 p-5">
-            <div className="flex flex-col items-center">
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-paper text-sm font-semibold">{i + 1}</span>
-              {i < steps.length - 1 && <span className="mt-1 w-px flex-1 bg-line" />}
-            </div>
-            <div className="flex-1">
-              <p className="text-xs text-muted">{s.day === 0 ? "Day 0" : `Day ${s.day}`} · {s.ch}</p>
-              <p className="font-medium">{s.title}</p>
-              <p className="mt-1 text-sm text-ink/80">{s.text}</p>
-            </div>
-          </div>
-        ))}
+        <SequenceEditor t={t} reload={reload} />
         <CampaignForm t={t} reload={reload} />
         <div className="card p-5 text-sm">
           <p className="font-medium">Rules the agent always follows</p>

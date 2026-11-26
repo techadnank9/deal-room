@@ -77,6 +77,18 @@ export default function SearchPage() {
     }
   }
 
+  function exportCsv() {
+    if (!res) return;
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = [["Company", "Domain", "Signal", "Why", "Source"], ...res.results.map((r) => [r.company, r.domain, r.signal, r.why, r.sourceUrl])];
+    const blob = new Blob([rows.map((r) => r.map(esc).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `search-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   const filters = res ? (Object.keys(FILTER_LABEL) as (keyof ProspectFilters)[]).filter((k) => res.filters[k]?.length) : [];
   const selectable = res?.results.map((x, i) => (x.known ? -1 : i)).filter((i) => i >= 0) ?? [];
 
@@ -116,6 +128,19 @@ export default function SearchPage() {
                   </button>
                 ))}
               </div>
+              <form
+                className="mt-6 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-white p-3 text-sm"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const d = new FormData(e.currentTarget).get("like")?.toString().trim();
+                  if (d) void run(`Companies similar to ${d} (same kind of product, customers and size), showing a buying signal right now`);
+                }}
+              >
+                <span className="font-medium">Lookalikes:</span>
+                <span className="text-muted">find companies like your best customer</span>
+                <input name="like" placeholder="customer.com" aria-label="Your best customer's website" className="min-w-[160px] flex-1 rounded-lg border border-line px-2.5 py-1.5 outline-none focus:border-ink" />
+                <button className={Btn.dark}>Find lookalikes</button>
+              </form>
               <p className="mt-6 text-center text-sm text-muted">
                 Want this every day without asking?{" "}
                 <Link href="/app/agent?tab=sources" className="font-medium text-ink underline underline-offset-2">
@@ -165,9 +190,14 @@ export default function SearchPage() {
                     />
                     {pick.size ? `${pick.size} selected` : `${res.results.length} companies found`}
                   </label>
+                  <span className="flex gap-2">
+                  <button className={Btn.ghost} onClick={exportCsv}>
+                    Export CSV
+                  </button>
                   <button className={Btn.primary} disabled={!pick.size || adding} onClick={() => void add()}>
                     {adding ? "Adding…" : `Add to my agent${pick.size ? ` (${pick.size})` : ""}`}
                   </button>
+                  </span>
                 </div>
                 {added && <p className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{added}</p>}
                 <ul className="space-y-2">

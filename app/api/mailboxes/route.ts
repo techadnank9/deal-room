@@ -1,5 +1,6 @@
 import { currentSession, PLANS } from "@/lib/workspace";
-import { addMailbox, bounceStats, listMailboxes, mailboxPause, MAILBOX_PRESETS, publicBox, removeMailbox, resumeMailbox } from "@/lib/agent/store";
+import { addMailbox, bounceStats, listMailboxes, mailboxPause, MAILBOX_PRESETS, publicBox, removeMailbox, resumeMailbox, sentTodayFrom, updateMailbox } from "@/lib/agent/store";
+import { effectiveDailyCap } from "@/lib/mail";
 import { checkDomain } from "@/lib/mail/dnscheck";
 import { verifyMailbox } from "@/lib/mail";
 
@@ -11,7 +12,7 @@ export async function GET(req: Request) {
   if (!s) return Response.json({ error: "signed out" }, { status: 401 });
   const boxes = await listMailboxes(s.workspace.id);
   const health = await Promise.all(
-    boxes.map(async (b) => ({ id: b.id, dns: await checkDomain(b.email).catch(() => null), pause: await mailboxPause(b.id), bounces: await bounceStats(b.id, 14) })),
+    boxes.map(async (b) => ({ id: b.id, dns: await checkDomain(b.email).catch(() => null), pause: await mailboxPause(b.id), bounces: await bounceStats(b.id, 14), sentToday: await sentTodayFrom(b.id), capToday: effectiveDailyCap(b) })),
   );
   const base = process.env.APP_URL || new URL(req.url).origin;
   return Response.json({ webhookUrl: `${base}/api/inbound/resend?ws=${s.workspace.id}`, mailboxes: boxes.map((b) => ({ ...publicBox(b), ...health.find((h) => h.id === b.id) })), presets: Object.entries(MAILBOX_PRESETS).map(([id, p]) => ({ id, label: p.label, help: p.help })) });
@@ -46,9 +47,10 @@ export async function DELETE(req: Request) {
 export async function PATCH(req: Request) {
   const s = await currentSession();
   if (!s) return Response.json({ error: "signed out" }, { status: 401 });
-  const b = (await req.json()) as { id?: string; action?: string };
+  const b = (await req.json()) as { id?: string; action?: string; signature?: string; fromName?: string; dailyCap?: number };
   const box = (await listMailboxes(s.workspace.id)).find((x) => x.id === b.id);
   if (!box) return Response.json({ error: "not found" }, { status: 404 });
   if (b.action === "resume") await resumeMailbox(box.id);
+  if (b.action === "update") await updateMailbox(s.workspace.id, box.id, { signature: b.signature, fromName: b.fromName, dailyCap: b.dailyCap });
   return Response.json({ ok: true });
 }

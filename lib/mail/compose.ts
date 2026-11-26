@@ -14,6 +14,8 @@ export type BuildMessageInput = {
   unsubscribeUrl: string;
   /** Sender's physical postal address (required by CAN-SPAM for commercial email). */
   address?: string;
+  /** Plain-text signature under the message. */
+  signature?: string;
   messageId?: string;
 };
 
@@ -48,7 +50,7 @@ export function buildMessage(input: BuildMessageInput): OutboundMessage {
   const { from, to, subject, unsubscribeUrl } = input;
   const addr = input.address?.trim().replace(/\s*\n\s*/g, ", ");
   const footer = `If this isn't relevant, reply 'no' or unsubscribe: ${unsubscribeUrl}${addr ? `\n${addr}` : ""}`;
-  const body = input.text.replace(/\r\n/g, "\n").trimEnd();
+  const body = (input.signature?.trim() ? `${input.text.trimEnd()}\n\n${input.signature.trim()}` : input.text).replace(/\r\n/g, "\n").trimEnd();
   const text = `${body}\n\n--\n${footer}\n`;
 
   const paragraphs = body

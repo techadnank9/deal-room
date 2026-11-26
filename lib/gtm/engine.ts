@@ -347,6 +347,29 @@ export async function draftSequence(leadId: string, opts: { enrich?: boolean } =
   const facts = [...(l.signals ?? []).map((s) => `${s.text} (${s.sourceUrl})`), ...mem.hits.filter((h) => h.metadata?.leadId === l!.id).map((h) => h.text)];
   const variant: "A" | "B" = t.leads.filter((x) => x.sequence?.length).length % 2 ? "B" : "A";
   const cmp = campaignOf(t);
+  if (cmp.steps?.length) {
+    // A custom sequence from the Campaign tab: every step written from its own mode, template or fixed text.
+    const out = await writeCustomSequence(t, l, who, buyer, facts, cmp);
+    const cites = (l.signals ?? []).map((s) => s.sourceUrl).filter(Boolean).slice(0, 3) as string[];
+    l.sequence = out.map((m, i) => ({
+      id: randomUUID().slice(0, 8),
+      step: i + 1,
+      channel: m.channel,
+      variant,
+      to: m.channel === "email" ? who?.email : (who?.linkedin ?? who?.name),
+      subject: m.subject,
+      body: m.body,
+      dayOffset: m.dayOffset,
+      approval: "pending" as const,
+      draftedBy: "Arjun",
+      citations: cites,
+    }));
+    const first = l.sequence.find((m) => m.channel === "email");
+    if (first) l.email = { subject: first.subject ?? "", body: first.body };
+    log(t, { actor: "agent", who: "Arjun", kind: "draft", text: `Drafted your ${l.sequence.length}-step sequence for ${l.company}; waiting for your approval`, leadId });
+    await saveTeam(t);
+    return t;
+  }
   const { data } = await llmJSON<{ email1: { subject: string; body: string }; linkedin: { body: string }; email2: { subject: string; body: string }; email3: { body: string } }>({
     label: "gtm-sequence",
     maxTokens: 1500,
@@ -380,6 +403,80 @@ export async function draftSequence(leadId: string, opts: { enrich?: boolean } =
   await saveTeam(t);
   await indexDocs(domainKey(t), [{ id: `msg-${l.id}`, text: `Outreach to ${l.company}: ${data.email1.subject}. ${data.email1.body}`, metadata: { kind: "message", leadId: l.id } }]);
   return t;
+}
+
+/** Fill {first_name} {company} {signal} {sender} {sender_company} in fixed text. */
+export function fillVariables(text: string, v: { first_name: string; company: string; signal: string; sender: string; sender_company: string }) {
+  return text.replace(/\{\s*(first_name|company|signal|sender|sender_company)\s*\}/gi, (_, k: string) => v[k.toLowerCase() as keyof typeof v] ?? "");
+}
+
+const SLOT: Record<string, string> = { first: "first email", follow_up: "follow-up in the same thread", closing: "short, polite last email" };
+
+/** Write a custom sequence: one call for all AI / template steps, fixed steps filled in directly. */
+async function writeCustomSequence(
+  t: TeamState,
+  l: Lead,
+  who: Contact | undefined,
+  buyer: import("./types").Persona | undefined,
+  facts: string[],
+  cmp: import("./types").CampaignSettings,
+): Promise<{ channel: Touch["channel"]; dayOffset: number; subject?: string; body: string }[]> {
+  const steps = [...(cmp.steps ?? [])].sort((a, b) => a.dayOffset - b.dayOffset);
+  const firstEmail = steps.findIndex((s) => s.channel === "email");
+  const vars = { first_name: who?.name.split(" ")[0] ?? "there", company: l.company, signal: l.signals?.[0]?.text ?? l.why, sender: t.rep ?? "", sender_company: t.company ?? "" };
+  const written = steps.map((s) => (s.mode === "fixed" ? { subject: s.subject ? fillVariables(s.subject, vars) : undefined, body: fillVariables(s.text ?? "", vars) } : null));
+  const todo = steps.map((s, i) => ({ s, i })).filter(({ s }) => s.mode !== "fixed");
+  if (todo.length) {
+    const tpl = (id?: string) => (t.templates ?? []).find((x) => x.id === id);
+    const brief = todo
+      .map(({ s, i }, k) => {
+        const role = i === firstEmail ? "first email (needs a subject)" : s.channel === "linkedin" ? "LinkedIn connection note under 280 characters (sent by hand)" : i === steps.length - 1 && steps.length > 2 ? "last email, under 40 words, polite close" : "follow-up email in the same thread, a new angle, under 60 words";
+        const tp = s.mode === "template" ? tpl(s.templateId) : undefined;
+        return `${k + 1}. Day ${s.dayOffset}, ${role}.${tp ? ` Follow this template's structure and fill it naturally for this person (keep its intent, never leave placeholders): """${tp.subject ? `Subject: ${tp.subject}\n` : ""}${tp.body}"""${tp.instructions ? ` Template instructions: ${tp.instructions}` : ""}` : ""}${s.instruction ? ` Your instruction for this step: ${s.instruction}` : ""}`;
+      })
+      .join("\n");
+    const { data } = await llmJSON<{ messages: { subject: string; body: string }[] }>({
+      label: "gtm-custom-sequence",
+      maxTokens: 2200,
+      system: `You are Arjun, outbound writer, writing a sequence from ${t.rep ?? "the rep"} at ${t.company ?? "our company"} to ${who ? `${who.name} (${who.title})` : "the buyer"} at ${l.company}. Name ONE concrete trigger signal from the facts and tie it to our value. ${buyer ? `This person is a "${buyer.label}"; their pains: ${buyer.pains.join("; ")}. ` : ""}CTA: ${cmp.cta.trim() || buyer?.cta || "a short call"}. Tone: ${cmp.tone}. Language: ${cmp.language}. First email 50-80 words. Plain text, one question at most, no links, no hype, no placeholders. Sign as ${t.rep ?? "the team"} from ${t.company ?? "our company"}.${t.knowledge ? ` Facts about our product (use only these, invent nothing): value: ${t.knowledge.valueProp}; pains: ${t.knowledge.pains}; features: ${t.knowledge.features}; proof: ${t.knowledge.proof}.` : ""} Return exactly ${todo.length} messages, in this order; subject only for the first email, "" otherwise:\n${brief}`,
+      user: `We sell: ${t.offering}\nProspect: ${l.company} (${l.domain}), ${l.industry ?? ""}, ${l.size ?? "?"} people\nFacts:\n${facts.map((f) => `- ${f}`).join("\n") || l.why}`,
+      schema: obj({ messages: arr(obj({ subject: str(), body: str() })) }),
+      mock: () => ({ messages: todo.map(({ s }, k) => ({ subject: k === 0 ? `${l.company}: quick idea` : "", body: s.channel === "linkedin" ? `Hi ${vars.first_name}, saw ${l.company}'s news. Would love to connect.` : `Hi ${vars.first_name},\n\n${l.why}\n\nWorth a quick chat?\n\n${t.rep ?? ""}` })) }),
+    });
+    todo.forEach(({ i }, k) => (written[i] = data.messages[k] ?? { subject: "", body: "" }));
+  }
+  return steps.map((s, i) => ({ channel: s.channel, dayOffset: s.dayOffset, subject: i === firstEmail ? written[i]?.subject || undefined : undefined, body: written[i]?.body ?? "" })).filter((m) => m.body.trim());
+}
+
+/** Try one template (or a step) on a real lead without saving anything. */
+export async function previewTemplate(tplIn: import("./types").Template, leadId?: string): Promise<{ lead: string; to: string; subject: string; body: string }> {
+  const t = await loadTeam();
+  const l = (leadId && t.leads.find((x) => x.id === leadId)) || t.leads.find((x) => x.contacts?.some((c) => c.email) && x.stage !== "lost") || t.leads[0];
+  if (!l) throw new Error("No leads yet to preview on.");
+  const who = l.contacts?.find((c) => c.persona && c.email) ?? l.contacts?.[0];
+  const buyer = (t.personas ?? []).find((p) => p.enabled && p.label === who?.persona);
+  const facts = (l.signals ?? []).map((s) => `${s.text} (${s.sourceUrl})`);
+  const cmp = { ...campaignOf(t), steps: [{ id: "p", channel: "email" as const, dayOffset: tplIn.slot === "first" ? 0 : 4, mode: "template" as const, templateId: tplIn.id }] };
+  const saved = t.templates;
+  t.templates = [...(t.templates ?? []).filter((x) => x.id !== tplIn.id), tplIn];
+  const [m] = await writeCustomSequence(t, l, who, buyer, facts, cmp);
+  t.templates = saved;
+  return { lead: l.company, to: who ? `${who.name} (${who.title})` : l.company, subject: m?.subject ?? "", body: m?.body ?? "" };
+}
+
+export async function saveTemplates(list: import("./types").Template[]): Promise<TeamState> {
+  const t = await loadTeam();
+  t.templates = list.slice(0, 50).map((x) => ({ ...x, name: x.name.slice(0, 80), body: x.body.slice(0, 4000), instructions: (x.instructions ?? "").slice(0, 1000) }));
+  await saveTeam(t);
+  return t;
+}
+
+/** Rewrite every draft still waiting for review with the current sequence (nothing sent yet). */
+export async function redraftPending(): Promise<number> {
+  const t = await loadTeam();
+  const ids = t.leads.filter((l) => l.sequence?.length && l.sequence.some((m) => m.approval === "pending") && !l.sequence.some((m) => m.sentAt) && l.stage !== "lost").map((l) => l.id).slice(0, 25);
+  for (const id of ids) await draftSequence(id, { enrich: false }).catch((e) => console.error("[gtm] redraft", e));
+  return ids.length;
 }
 
 /** Human-in-the-loop gate: nothing is sent until a rep approves it here. */

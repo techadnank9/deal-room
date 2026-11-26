@@ -20,6 +20,8 @@ export type Mailbox = {
   replyTo?: string;
   /** Resend webhook signing secret, sealed. */
   webhookSecretSealed?: string;
+  /** Plain-text signature added under every email (no links: write the domain as text). */
+  signature?: string;
 };
 
 export type Inbound = {

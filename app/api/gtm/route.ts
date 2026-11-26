@@ -1,5 +1,5 @@
 import { loadTeam, withCompany } from "@/lib/agents/team";
-import { saveAgentSettings, importLeads, analytics, reindexAll, buildIcp, decideExpansion, decideTouch, draftSequence, enrichLead, graph, mapCompetitors, memorySearch, moveStage } from "@/lib/gtm/engine";
+import { previewTemplate, redraftPending, saveTemplates, saveAgentSettings, importLeads, analytics, reindexAll, buildIcp, decideExpansion, decideTouch, draftSequence, enrichLead, graph, mapCompetitors, memorySearch, moveStage } from "@/lib/gtm/engine";
 import type { Persona, Stage } from "@/lib/gtm/types";
 import { generatePersonas, savePersonas } from "@/lib/gtm/personas";
 import { drain, topUp, usage } from "@/lib/sponsors/flexprice";
@@ -26,7 +26,9 @@ export async function GET(req: Request) {
 
 type Body = {
   url?: string;
-  action: "intake" | "expansion" | "competitors" | "enrich" | "draft" | "touch" | "stage" | "search" | "topup" | "drain" | "reindex" | "personas" | "savePersonas" | "agentSettings" | "import" | "block" | "unblock" | "blocklist" | "bulk" | "prospect" | "addProspects" | "lists" | "file" | "notes" | "prefs" | "fit" | "refine" | "preview" | "judge";
+  action: "intake" | "expansion" | "competitors" | "enrich" | "draft" | "touch" | "stage" | "search" | "topup" | "drain" | "reindex" | "personas" | "savePersonas" | "agentSettings" | "import" | "block" | "unblock" | "blocklist" | "bulk" | "prospect" | "addProspects" | "lists" | "file" | "notes" | "prefs" | "fit" | "refine" | "preview" | "judge" | "templates" | "previewTemplate" | "redraft";
+  templates?: import("@/lib/gtm/types").Template[];
+  template?: import("@/lib/gtm/types").Template;
   prospect?: Prospect;
   fit?: "good" | "bad";
   reason?: string;
@@ -131,6 +133,12 @@ export async function POST(req: Request) {
           return Response.json({ state: await fileContacts(b.items ?? [], b.list ?? "") });
         case "notes":
           return Response.json({ state: await saveContactNotes(b.leadId!, b.contactId!, b.notes ?? "") });
+        case "templates":
+          return Response.json({ state: await saveTemplates(b.templates ?? []) });
+        case "previewTemplate":
+          return Response.json({ preview: await previewTemplate(b.template!, b.leadId) });
+        case "redraft":
+          return Response.json({ redrafted: await redraftPending(), state: await loadTeam() });
         case "preview": {
           const r = await prospectSearch(previewQuery(await loadTeam()));
           return Response.json({ ...r, results: r.results.filter((x) => !x.known).slice(0, 5) });

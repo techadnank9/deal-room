@@ -14,6 +14,7 @@ import type { Inbound } from "../mail/types";
 import { hiringSignal, newsSignals, recentFormD, type SignalHit } from "../signals";
 import { searchWeb } from "../sponsors/telem";
 import { recordTrace, step, withRun } from "../trace";
+import { emitEvent, slackReply } from "../integrations";
 import { bumpUsage, getWorkspace, listActiveWorkspaces, PLANS, usageThisMonth, usageToday, workspaceDomain, type Workspace } from "../workspace";
 import { clearsPrecision, fitExamples, passesKeywords, sendable, targetingRules } from "../gtm/targeting";
 import { allMailboxes, bounceStats, cancelLeadOutbox, dueOutbox, enqueue, isSuppressed, listMailboxes, mailboxPause, markOut, pauseMailbox, saveInbound, sentMessages, sentTodayFrom, setMailboxCursor, suppress, type StoredMailbox } from "./store";
@@ -211,6 +212,7 @@ async function runSource(ws: Workspace, s: AgentState): Promise<number> {
     if (found.length) void onLeadsFound(found);
   }
   if (found.length) await bumpUsage(ws.id, "leads", found.length);
+  for (const l of found) await emitEvent(t.prefs, "lead.found", { company: l.company, domain: l.domain, why: l.why, source: l.sourceUrl, found_by: l.foundBy });
   if (found.length && t.prefs?.autoEnrich !== false) await bumpUsage(ws.id, "enrich", Math.min(3, found.length)); // onLeadsFound researches the first 3
   await bumpUsage(ws.id, "runs");
   const scan = lastScan;
@@ -346,10 +348,12 @@ async function runSender() {
         references: row.in_reply_to ?? undefined,
         unsubscribeUrl: unsub,
         address,
+        signature: isReply ? undefined : box.signature,
       });
       const t0 = Date.now();
       const r = await sendMail(box, msg);
       await markOut(row.id, { status: "sent", messageId: r.messageId });
+      if (!isReply) await emitEvent(t.prefs, "email.sent", { to: row.to_email, subject: row.subject, lead_id: row.lead_id, from: box.email });
       await withCompany(workspaceDomain(ws), () => recordTrace({ kind: "send", label: `sent to ${row.to_email}`, ms: Date.now() - t0, input: { from: box.email, subject: row.subject, via: box.provider ?? "smtp" }, output: { messageId: r.messageId } }));
       await bumpUsage(ws.id, "sends");
       if (row.lead_id && row.touch_id) await withCompany(workspaceDomain(ws), () => markTouchSent(row.lead_id!, row.touch_id!, r.messageId));
@@ -410,6 +414,11 @@ export async function handleInbound(ws: Workspace, box: StoredMailbox, m: Inboun
     if (out.lead_id && category !== "out_of_office") {
       await cancelLeadOutbox(ws.id, out.lead_id);
       await markReplied(out.lead_id, category === "bounce" ? "not_interested" : category, clean || m.subject);
+    }
+    if (category !== "out_of_office") {
+      const company = t.leads.find((x) => x.id === out.lead_id)?.company;
+      await slackReply(t.prefs, { from: m.from, company, category, text: clean || m.subject, draft });
+      await emitEvent(t.prefs, "reply.received", { from: m.from, company, category, subject: m.subject, text: clean, drafted_answer: draft || null, lead_id: out.lead_id });
     }
   });
 }

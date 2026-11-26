@@ -73,6 +73,21 @@ export async function addMailbox(workspaceId: string, input: { email: string; fr
   return { ...box, lastUid: 0, status: "ok" };
 }
 
+/** Change a mailbox's signature, sender name or daily cap. */
+export async function updateMailbox(workspaceId: string, id: string, patch: { signature?: string; fromName?: string; dailyCap?: number }) {
+  const box = (await listMailboxes(workspaceId)).find((b) => b.id === id);
+  if (!box) return null;
+  const { lastUid: _l, status: _s, ...data } = box;
+  const next = {
+    ...data,
+    ...(patch.signature !== undefined ? { signature: patch.signature.slice(0, 1000) } : {}),
+    ...(patch.fromName !== undefined && patch.fromName.trim() ? { fromName: patch.fromName.trim().slice(0, 80) } : {}),
+    ...(patch.dailyCap !== undefined ? { dailyCap: Math.max(5, Math.min(60, Math.round(patch.dailyCap))) } : {}),
+  };
+  await (await db()).exec(`update mailboxes set data = ? where id = ? and workspace_id = ?`, [JSON.stringify(next), id, workspaceId]);
+  return next;
+}
+
 export async function listMailboxes(workspaceId: string): Promise<StoredMailbox[]> {
   const rows = await (await db()).all<MailboxRow>(`select id, workspace_id, data, last_uid, status from mailboxes where workspace_id = ? order by created_at`, [workspaceId]);
   return rows.map(toBox);
@@ -90,7 +105,7 @@ export async function setMailboxCursor(id: string, lastUid: number, status = "ok
 
 /** Public view: never return the sealed password. */
 export function publicBox(b: StoredMailbox) {
-  return { id: b.id, email: b.email, fromName: b.fromName, dailyCap: b.dailyCap, warmupStart: b.warmupStart, status: b.status, smtpHost: b.smtp.host, provider: b.provider ?? "smtp", replyTo: b.replyTo, webhook: Boolean(b.webhookSecretSealed) };
+  return { id: b.id, email: b.email, fromName: b.fromName, dailyCap: b.dailyCap, warmupStart: b.warmupStart, status: b.status, smtpHost: b.smtp.host, provider: b.provider ?? "smtp", replyTo: b.replyTo, webhook: Boolean(b.webhookSecretSealed), signature: b.signature ?? "" };
 }
 
 /* ---------- outbox ---------- */
@@ -137,6 +152,13 @@ export async function markOut(id: string, patch: { status: string; messageId?: s
     id,
   ]);
 }
+/** Edit or cancel one queued email before it goes out. */
+export async function updateQueued(workspaceId: string, id: string, patch: { subject?: string; body?: string; cancel?: boolean }) {
+  const d = await db();
+  if (patch.cancel) return d.exec(`update outbox set status = 'cancelled', error = 'cancelled by you' where id = ? and workspace_id = ? and status = 'queued'`, [id, workspaceId]);
+  await d.exec(`update outbox set subject = coalesce(?, subject), body = coalesce(?, body) where id = ? and workspace_id = ? and status = 'queued'`, [patch.subject ?? null, patch.body ?? null, id, workspaceId]);
+}
+
 export async function cancelLeadOutbox(workspaceId: string, leadId: string) {
   await (await db()).exec(`update outbox set status = 'cancelled' where workspace_id = ? and lead_id = ? and status = 'queued'`, [workspaceId, leadId]);
 }

@@ -125,6 +125,7 @@ export async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
     t.campaign ??= cur.campaign;
     t.knowledge ??= cur.knowledge;
     t.lists ??= cur.lists;
+    t.templates ??= cur.templates;
     t.prefs ??= cur.prefs;
     t.leads.sort((x, y) => y.at.localeCompare(x.at));
   }
@@ -141,6 +142,7 @@ export async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
       t.campaign ??= now.campaign;
       t.knowledge ??= now.knowledge;
       t.lists ??= now.lists;
+      t.templates ??= now.templates;
       t.prefs ??= now.prefs;
       const seenA = new Set((t.activity ?? []).map((a) => a.id));
       t.activity = [...(t.activity ?? []), ...(now.activity ?? []).filter((a) => !seenA.has(a.id))].sort((x, y) => y.at.localeCompare(x.at)).slice(0, 300);

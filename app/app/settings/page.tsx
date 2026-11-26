@@ -18,6 +18,9 @@ type Mailbox = {
   dns?: { domain: string; checks: Record<"mx" | "spf" | "dkim" | "dmarc", Check>; allSet: boolean; toFix: number } | null;
   pause?: { reason: string; at: string } | null;
   bounces?: { sent: number; bounced: number };
+  sentToday?: number;
+  capToday?: number;
+  signature?: string;
 };
 type Preset = { id: string; label: string; help: string };
 type Settings = WorkspaceInfo["workspace"]["settings"];
@@ -103,6 +106,7 @@ export default function SettingsPage() {
                 </div>
               </Section>
               <Preferences />
+              <Integrations />
               <Billing me={me} />
               <Account email={me.email} />
             </>
@@ -112,6 +116,76 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function MailboxEdit({ b, onSaved }: { b: Mailbox; onSaved: () => Promise<void> | void }) {
+  const [sig, setSig] = useState(b.signature ?? "");
+  const [cap, setCap] = useState(b.dailyCap);
+  const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
+  return (
+    <details className="w-full text-sm">
+      <summary className="cursor-pointer text-muted">Signature and daily limit</summary>
+      <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_140px]">
+        <textarea aria-label="Signature" rows={3} className={input} value={sig} onChange={(e) => setSig(e.target.value)} placeholder={"Adnan Khan\nFounder, TesterNinja\ntesterninja.com"} />
+        <label className="text-xs text-muted">
+          Daily limit (5-60)
+          <input type="number" min={5} max={60} className={`${input} mt-1`} value={cap} onChange={(e) => setCap(Number(e.target.value) || 30)} />
+        </label>
+      </div>
+      <p className="mt-1 text-xs text-muted">Plain text, no links: write your website as text. Added under every outreach email.</p>
+      <button
+        className={`${Btn.dark} mt-2`}
+        disabled={state === "saving"}
+        onClick={async () => {
+          setState("saving");
+          await fetch("/api/mailboxes", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: b.id, action: "update", signature: sig, dailyCap: cap }) });
+          setState("saved");
+          await onSaved();
+        }}
+      >
+        {state === "saving" ? "Saving…" : state === "saved" ? "Saved" : "Save"}
+      </button>
+    </details>
+  );
+}
+
+function Integrations() {
+  const { data, reload } = usePoll<Gtm>("/api/gtm", 0);
+  const [slack, setSlack] = useState<string | null>(null);
+  const [hook, setHook] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const p = data?.state.prefs;
+  async function save() {
+    const s = (slack ?? p?.slackWebhook ?? "").trim();
+    const h = (hook ?? p?.webhookUrl ?? "").trim();
+    if (s && !/^https:\/\/hooks\.slack\.com\//.test(s)) return setMsg({ ok: false, text: "A Slack webhook starts with https://hooks.slack.com/" });
+    if (h && !/^https:\/\//.test(h)) return setMsg({ ok: false, text: "The webhook URL must start with https://" });
+    await post("/api/gtm", { action: "prefs", prefs: { slackWebhook: s, webhookUrl: h } });
+    await reload();
+    setSlack(null);
+    setHook(null);
+    setMsg({ ok: true, text: "Saved." });
+  }
+  return (
+    <Section id="integrations" title="Integrations" sub="Get replies where your team works, and send lead events to your own tools.">
+      <div className="space-y-4">
+        <label className="block text-sm">
+          <span className="font-medium">Slack reply alerts</span>
+          <span className="block text-muted">Every reply is posted to a Slack channel with the drafted answer. In Slack: Apps → Incoming Webhooks → Add to a channel, then paste the URL.</span>
+          <input className={`${input} mt-2`} placeholder="https://hooks.slack.com/services/…" value={slack ?? p?.slackWebhook ?? ""} onChange={(e) => setSlack(e.target.value)} />
+        </label>
+        <label className="block text-sm">
+          <span className="font-medium">Webhook</span>
+          <span className="block text-muted">We POST JSON for lead.found, email.sent and reply.received to this URL (for Zapier, Make, n8n, your CRM). Each request carries an X-DealRoom-Signature header.</span>
+          <input className={`${input} mt-2`} placeholder="https://…" value={hook ?? p?.webhookUrl ?? ""} onChange={(e) => setHook(e.target.value)} />
+        </label>
+        <button className={Btn.dark} disabled={slack === null && hook === null} onClick={() => void save()}>
+          Save
+        </button>
+        <Status msg={msg} />
+      </div>
+    </Section>
   );
 }
 
@@ -258,7 +332,7 @@ function Mailboxes() {
                 <div className="min-w-0">
                   <p className="truncate font-medium">{b.email}</p>
                   <p className="text-sm text-muted">
-                    From &ldquo;{b.fromName}&rdquo; · up to {b.dailyCap} emails a day
+                    From &ldquo;{b.fromName}&rdquo; · sent {b.sentToday ?? 0} of {b.capToday ?? b.dailyCap} today{b.capToday !== undefined && b.capToday < b.dailyCap ? ` (ramping up to ${b.dailyCap})` : ""}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -283,6 +357,7 @@ function Mailboxes() {
                     .
                   </div>
                 )}
+                <MailboxEdit b={b} onSaved={reload} />
                 {b.dns && (
                   <details className="w-full text-sm">
                     <summary className="cursor-pointer text-muted">
