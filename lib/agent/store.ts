@@ -199,3 +199,10 @@ export async function isSuppressed(workspaceId: string, email: string) {
   const rows = await (await db()).all<{ email: string }>(`select email from suppression where workspace_id = ? and (email = ? or email = ?)`, [workspaceId, email.toLowerCase(), `@${domain}`]);
   return rows.length > 0;
 }
+
+export async function unsuppress(workspaceId: string, email: string) {
+  await (await db()).exec(`delete from suppression where workspace_id = ? and email = ?`, [workspaceId, email.toLowerCase()]);
+}
+export async function listSuppression(workspaceId: string): Promise<{ email: string; reason: string | null }[]> {
+  return (await db()).all(`select email, reason from suppression where workspace_id = ? order by at desc limit 500`, [workspaceId]);
+}

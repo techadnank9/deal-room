@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import PersonaCards from "@/components/app/PersonaCards";
+import { BlocklistCard, CampaignForm, ImportCsv, TargetingCard } from "@/components/app/AgentSettings";
 import { ago, Btn, EmailBadge, Empty, Flames, host, inTime, leadState, Pill, post, topContact, usePoll, type AgentInfo, type Gtm, type WorkspaceInfo } from "@/components/app/ui";
 import type { Lead } from "@/lib/agents/team";
 import type { Persona, Touch } from "@/lib/gtm/types";
@@ -61,7 +62,7 @@ export default function AgentPage() {
 
   return (
     <div>
-      <header className="border-b border-line bg-white px-8 pt-5">
+      <header className="border-b border-line bg-white px-4 pt-5 md:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
@@ -106,12 +107,12 @@ export default function AgentPage() {
           })}
         </nav>
       </header>
-      <main className="px-8 py-6">
+      <main className="px-4 py-6 md:px-8">
         {tab === "overview" && <Overview gtm={gtm} agent={agent} leads={leads} review={review.length} go={go} busy={busy} runNow={() => act("run", () => post("/api/agent", { action: "run_now" }))} />}
         {tab === "review" && <Review leads={review} reload={reload} />}
-        {tab === "leads" && <Leads leads={leads} agent={agent} />}
-        {tab === "sources" && <Sources gtm={gtm} me={me} agent={agent} busy={busy} act={act} />}
-        {tab === "campaign" && <Campaign leads={leads} autopilot={ws.settings.autopilot} />}
+        {tab === "leads" && <Leads leads={leads} agent={agent} reload={reload} />}
+        {tab === "sources" && <Sources gtm={gtm} me={me} agent={agent} busy={busy} act={act} reload={reload} />}
+        {tab === "campaign" && <Campaign leads={leads} autopilot={ws.settings.autopilot} t={t} reload={reload} />}
         {tab === "activity" && <Activity gtm={gtm} agent={agent} />}
         {tab === "settings" && (
           <div className="card max-w-xl p-6 text-sm">
@@ -205,6 +206,14 @@ function Review({ leads, reload }: { leads: Lead[]; reload: () => Promise<void> 
   const [edits, setEdits] = useState<Record<string, { subject?: string; body?: string }>>({});
   const [busy, setBusy] = useState(false);
   const [why, setWhy] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  async function bulk(decision: "approve" | "reject") {
+    setBusy(true);
+    await post("/api/gtm", { action: "bulk", leadIds: picked, decision });
+    setPicked([]);
+    await reload();
+    setBusy(false);
+  }
   const l = leads.find((x) => x.id === sel) ?? leads[0];
   if (!l) return <Empty title="Nothing to review">When the agent writes emails, they wait here for your approval. Switch on Autopilot in Settings to skip this step.</Empty>;
   const c = topContact(l);
@@ -230,12 +239,31 @@ function Review({ leads, reload }: { leads: Lead[]; reload: () => Promise<void> 
   return (
     <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
       <aside className="card h-fit overflow-hidden">
-        <p className="border-b border-line px-4 py-3 text-xs text-muted">{leads.length} waiting · approve to send, reject to drop</p>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" className="accent-[#ff4a1c]" checked={picked.length === leads.length && leads.length > 0} onChange={(e) => setPicked(e.target.checked ? leads.map((x) => x.id) : [])} />
+            {picked.length ? `${picked.length} selected` : `${leads.length} waiting`}
+          </label>
+          {picked.length > 0 && (
+            <span className="flex gap-1.5">
+              <button className="rounded-lg bg-accent px-2 py-1 font-medium text-white" disabled={busy} onClick={() => bulk("approve")}>Approve</button>
+              <button className="rounded-lg border border-line px-2 py-1" disabled={busy} onClick={() => bulk("reject")}>Reject</button>
+            </span>
+          )}
+        </div>
         <ul className="max-h-[70vh] divide-y divide-line overflow-y-auto">
           {leads.map((x) => (
             <li key={x.id}>
               <button onClick={() => setSel(x.id)} className={`flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm ${x.id === l.id ? "bg-paper" : "hover:bg-paper/60"}`}>
-                <span className="min-w-0">
+                <input
+                  type="checkbox"
+                  className="accent-[#ff4a1c]"
+                  aria-label={`Select ${x.company}`}
+                  checked={picked.includes(x.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setPicked(e.target.checked ? [...picked, x.id] : picked.filter((y) => y !== x.id))}
+                />
+                <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{topContact(x)?.name ?? x.company}</span>
                   <span className="block truncate text-xs text-muted">{x.company}</span>
                 </span>
@@ -327,7 +355,7 @@ const STATUS_LABEL: Record<string, [string, "line" | "green" | "amber" | "red" |
   closed: ["Closed", "red"],
 };
 
-function Leads({ leads, agent }: { leads: Lead[]; agent: AgentInfo | null }) {
+function Leads({ leads, agent, reload }: { leads: Lead[]; agent: AgentInfo | null; reload: () => Promise<void> }) {
   const [f, setF] = useState<(typeof FILTERS)[number][0]>("all");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -339,7 +367,7 @@ function Leads({ leads, agent }: { leads: Lead[]; agent: AgentInfo | null }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search leads" className="w-64 rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search leads" className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink sm:w-64" />
         {FILTERS.map(([k, label]) => {
           const n = k === "all" ? leads.length : leads.filter((l) => leadState(l) === k).length;
           return (
@@ -349,6 +377,7 @@ function Leads({ leads, agent }: { leads: Lead[]; agent: AgentInfo | null }) {
           );
         })}
       </div>
+      <div className="flex justify-end"><ImportCsv reload={reload} /></div>
       {!rows.length ? (
         <Empty title="No leads here yet">The agent adds new leads a few times a day. Press “Run a search now” on the Overview tab to start.</Empty>
       ) : (
@@ -476,7 +505,7 @@ const SIGNAL_ROWS = [
   { key: "lookalikes", title: "Lookalikes of your customers", text: "Companies that read like the customers on your website", match: () => false },
 ];
 
-function Sources({ gtm, me, agent, busy, act }: { gtm: Gtm; me: WorkspaceInfo; agent: AgentInfo | null; busy: string | null; act: (l: string, fn: () => Promise<unknown>) => Promise<void> }) {
+function Sources({ gtm, me, agent, busy, act, reload }: { gtm: Gtm; me: WorkspaceInfo; agent: AgentInfo | null; busy: string | null; act: (l: string, fn: () => Promise<unknown>) => Promise<void>; reload: () => Promise<void> }) {
   const t = gtm.state;
   const [personas, setPersonas] = useState<Persona[] | null>(null);
   const ps = personas ?? t.personas ?? [];
@@ -510,6 +539,10 @@ function Sources({ gtm, me, agent, busy, act }: { gtm: Gtm; me: WorkspaceInfo; a
             </div>
           </div>
         </div>
+      </section>
+      <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+        <TargetingCard t={t} reload={reload} />
+        <BlocklistCard />
       </section>
       <section>
         <div className="mb-3 flex items-end justify-between">
@@ -564,12 +597,12 @@ function Sources({ gtm, me, agent, busy, act }: { gtm: Gtm; me: WorkspaceInfo; a
 
 /* ---------------- Campaign ---------------- */
 
-function Campaign({ leads, autopilot }: { leads: Lead[]; autopilot: boolean }) {
+function Campaign({ leads, autopilot, t, reload }: { leads: Lead[]; autopilot: boolean; t: Gtm["state"]; reload: () => Promise<void> }) {
   const sample = leads.find((l) => l.sequence?.length);
   const steps = [
     { day: 0, ch: "Email", title: "First email", text: "Short, personal, names the exact signal and its source. Asks for a 15-minute call (variant A) or offers a 2-minute teardown (variant B)." },
     { day: 1, ch: "LinkedIn", title: "Connection note", text: "Under 280 characters. Shown in Review for you to copy and send yourself." },
-    { day: 4, ch: "Email", title: "Follow-up", text: "Same thread, a new angle, under 70 words. Only sent if they haven't replied." },
+    { day: t.campaign?.followUpDays ?? 4, ch: "Email", title: "Follow-up", text: "Same thread, a new angle, under 70 words. Only sent if they haven't replied." },
   ];
   return (
     <div className="grid max-w-[1100px] gap-6 lg:grid-cols-[1fr_380px]">
@@ -588,6 +621,7 @@ function Campaign({ leads, autopilot }: { leads: Lead[]; autopilot: boolean }) {
             </div>
           </div>
         ))}
+        <CampaignForm t={t} reload={reload} />
         <div className="card p-5 text-sm">
           <p className="font-medium">Rules the agent always follows</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-ink/80">

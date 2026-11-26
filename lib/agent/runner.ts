@@ -12,6 +12,7 @@ import { decideTouch, draftSequence, markReplied, markTouchSent, onLeadsFound } 
 import { buildMessage, cleanReply, effectiveDailyCap, fetchNewMessages, isAutoReply, isBounce, makeUnsubToken, matchThread, normalizeMessageId, sendMail } from "../mail";
 import { hiringSignal, newsSignals, recentFormD, type SignalHit } from "../signals";
 import { bumpUsage, getWorkspace, listActiveWorkspaces, PLANS, usageThisMonth, usageToday, workspaceDomain, type Workspace } from "../workspace";
+import { clearsPrecision, passesKeywords, targetingRules } from "../gtm/targeting";
 import { allMailboxes, cancelLeadOutbox, dueOutbox, enqueue, isSuppressed, listMailboxes, markOut, saveInbound, sentMessages, sentTodayFrom, setMailboxCursor, suppress, type StoredMailbox } from "./store";
 
 export const APP_URL = process.env.APP_URL || "https://deelroomlive.onrender.com";
@@ -83,7 +84,7 @@ async function leadsFromHits(hits: SignalHit[], label: string): Promise<Lead[]> 
   const { data } = await llmJSON<{ picks: { index: number; why: string }[] }>({
     label: "agent-qualify-hits",
     maxTokens: 800,
-    system: "You qualify buying signals for a B2B seller. Pick the hits whose company plausibly fits the ideal customer and would buy now. Skip competitors (same category as the seller), investment funds, real-estate vehicles, and anything unclear. index = the number of the hit. why = one specific sentence tying the signal to the buyer's need.",
+    system: `You qualify buying signals for a B2B seller. Pick the hits whose company plausibly fits the ideal customer and would buy now. Skip competitors (same category as the seller), investment funds, real-estate vehicles, and anything unclear. index = the number of the hit. why = one specific sentence tying the signal to the buyer's need.${targetingRules(t)}`,
     user: `Seller sells: ${t.offering}\nIdeal customer: ${t.icp ?? t.icpSpec?.summary ?? ""}\nCompetitors: ${(t.competitors ?? []).map((c) => c.name).join(", ")}\n\nHits:\n${hits.map((h, i) => `${i}. ${h.company}: ${h.text} (${h.sourceUrl})`).join("\n")}`,
     schema: obj({ picks: arr(obj({ index: { type: "integer" }, why: str() })) }),
     mock: () => ({ picks: [] }),
@@ -92,6 +93,7 @@ async function leadsFromHits(hits: SignalHit[], label: string): Promise<Lead[]> 
   for (const p of data.picks.slice(0, 5)) {
     const h = hits[p.index];
     if (!h || have.has(h.company.toLowerCase())) continue;
+    if (!passesKeywords(`${h.company} ${h.text} ${p.why}`, t).ok) continue;
     const url = h.domain || (await resolveCompanyUrl(h.company).catch(() => ""));
     if (!url) continue;
     const domain = url.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
@@ -164,6 +166,7 @@ async function runDrafts(ws: Workspace, s: AgentState) {
   const ready = t.leads
     .filter((l) => l.enriched === "done" && !l.sequence?.length && !["lost", "won"].includes(l.stage ?? ""))
     .filter((l) => (l.contacts ?? []).some((c) => c.email && ["verified", "risky", "mx-valid", "guessed"].includes(c.emailStatus)))
+    .filter((l) => clearsPrecision(l.score, t))
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
     .slice(0, 3);
   for (const l of ready) {

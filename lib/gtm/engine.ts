@@ -5,6 +5,7 @@ import { loadTeam, saveTeam, type Lead, type TeamState } from "../agents/team";
 import { searchWeb } from "../sponsors/telem";
 import { enrichCompany, findEmail } from "../sponsors/glasser";
 import { matchPersona, targetTitles } from "./personas";
+import { campaignOf, clearsPrecision, passesKeywords, targetingOf } from "./targeting";
 import { canSpend, meter, PRICES } from "../sponsors/flexprice";
 import { indexDocs, mossAnswer, search } from "../sponsors/moss";
 import type { Activity, Actor, Competitor, Contact, IcpSpec, Intake, Signal, Stage, Touch } from "./types";
@@ -250,6 +251,11 @@ export async function enrichLead(leadId: string, actor: Actor = "agent"): Promis
   l.scoreWhy = data.why;
   l.enriched = "done";
   l.enrichedAt = new Date().toISOString();
+  const kw = passesKeywords(`${l.company} ${l.why} ${e?.data.description ?? ""} ${l.industry ?? ""}`, t);
+  if (!kw.ok && targetingOf(t).precision !== "off") {
+    l.stage = "lost";
+    l.history = [...(l.history ?? []), { at: new Date().toISOString(), stage: "lost", actor: "agent", who: "Maya", note: kw.why }];
+  }
   l.stage ??= "matched";
   l.history ??= [{ at: l.at, stage: "matched", actor: "agent", who: l.foundBy }];
   await meter("lead_enriched", { lead: l.domain }, l.company);
@@ -296,7 +302,7 @@ export async function onLeadsFound(leads: Lead[]) {
   // Write the email right away for anyone we found a usable address for (it then waits in Review, or autopilot approves it).
   const after = await loadTeam();
   for (const l of after.leads.filter((x) => leads.some((y) => y.id === x.id) && !x.sequence?.length)) {
-    const ok = (l.contacts ?? []).some((c) => c.email && ["verified", "risky", "mx-valid", "guessed"].includes(c.emailStatus));
+    const ok = (l.contacts ?? []).some((c) => c.email && ["verified", "risky", "mx-valid", "guessed"].includes(c.emailStatus)) && l.stage !== "lost" && clearsPrecision(l.score, after);
     if (ok) await draftSequence(l.id, { enrich: false }).catch((e) => console.error("[gtm] draft", e));
   }
 }
@@ -320,10 +326,11 @@ export async function draftSequence(leadId: string, opts: { enrich?: boolean } =
   await meter("search_query", { lead: l.domain }, `recall ${l.company}`);
   const facts = [...(l.signals ?? []).map((s) => `${s.text} (${s.sourceUrl})`), ...mem.hits.filter((h) => h.metadata?.leadId === l!.id).map((h) => h.text)];
   const variant: "A" | "B" = t.leads.filter((x) => x.sequence?.length).length % 2 ? "B" : "A";
+  const cmp = campaignOf(t);
   const { data } = await llmJSON<{ email1: { subject: string; body: string }; linkedin: { body: string }; email2: { subject: string; body: string } }>({
     label: "gtm-sequence",
     maxTokens: 1500,
-    system: `You are Arjun, outbound writer. Write a 3-touch sequence from a rep at ${t.company ?? "our company"} to ${who ? `${who.name} (${who.title})` : `the ${persona?.title ?? "buyer"}`} at ${l.company}. Weave in ONE specific trigger signal from the facts (name it concretely) and tie it to our value. Persona tone: ${persona?.seniority === "C-level" ? "brief, outcome and money first, max 70 words" : "practical, specific, max 100 words"}. CTA: ${variant === "A" ? "a 15-minute call this week" : "permission to send a 2-minute teardown video"}. email1 = first touch. linkedin = connection note under 280 characters. email2 = follow-up 4 days later, new angle, under 70 words. Sign every email and note as ${t.rep ?? "the team"} from ${t.company ?? "our company"} (the rep sends it, not you). Never use placeholders like [Name]; use the real names given or a role. No hype words.`,
+    system: `You are Arjun, outbound writer. Write a 3-touch sequence from a rep at ${t.company ?? "our company"} to ${who ? `${who.name} (${who.title})` : `the ${persona?.title ?? "buyer"}`} at ${l.company}. Weave in ONE specific trigger signal from the facts (name it concretely) and tie it to our value. Persona tone: ${persona?.seniority === "C-level" ? "brief, outcome and money first, max 70 words" : "practical, specific, max 100 words"}. CTA: ${cmp.cta.trim() || (cmp.goal === "demo" ? "booking a short demo" : cmp.goal === "reply" ? "a one-line reply" : variant === "A" ? "a 15-minute call this week" : "permission to send a 2-minute teardown video")}. Tone: ${cmp.tone}. Write in ${cmp.language}. email1 = first touch. linkedin = connection note under 280 characters. email2 = follow-up ${cmp.followUpDays} days later, new angle, under 70 words.${t.knowledge ? ` What we know about our own product (use it, don't invent other claims): value: ${t.knowledge.valueProp}; pains we solve: ${t.knowledge.pains}; features: ${t.knowledge.features}; proof: ${t.knowledge.proof}.` : ""} Sign every email and note as ${t.rep ?? "the team"} from ${t.company ?? "our company"} (the rep sends it, not you). Never use placeholders like [Name]; use the real names given or a role. No hype words.`,
     user: `We sell: ${t.offering}\nICP: ${t.icp ?? ""}\nProspect: ${l.company} (${l.domain}), ${l.industry ?? ""}, ${l.size ?? "?"} employees, funding ${l.funding ?? "?"}\nFacts:\n${facts.map((f) => `- ${f}`).join("\n") || l.why}`,
     schema: obj({ email1: obj({ subject: str(), body: str() }), linkedin: obj({ body: str() }), email2: obj({ subject: str(), body: str() }) }),
     mock: () => ({
@@ -346,7 +353,7 @@ export async function draftSequence(leadId: string, opts: { enrich?: boolean } =
     draftedBy: "Arjun",
     citations: cites,
   });
-  l.sequence = [mk(1, "email", 0, data.email1.body, data.email1.subject), mk(2, "linkedin", 1, data.linkedin.body), mk(3, "email", 4, data.email2.body, data.email2.subject)];
+  l.sequence = [mk(1, "email", 0, data.email1.body, data.email1.subject), ...(cmp.linkedinStep ? [mk(2, "linkedin", 1, data.linkedin.body)] : []), mk(3, "email", cmp.followUpDays, data.email2.body, data.email2.subject)];
   l.email = { subject: data.email1.subject, body: data.email1.body };
   log(t, { actor: "agent", who: "Arjun", kind: "draft", text: `Drafted a 3-touch sequence (variant ${variant}) for ${l.company}; waiting for your approval`, leadId });
   await saveTeam(t);
@@ -615,4 +622,48 @@ export async function markReplied(leadId: string, category: string, snippet: str
   if (category === "unsubscribe" || category === "not_interested") setStage(t, l, "lost", "agent", "Elena", category.replace("_", " "));
   log(t, { actor: "agent", who: "Elena", kind: "stage", text: `${l.company} replied (${category.replace("_", " ")}): "${snippet.slice(0, 90)}"`, leadId });
   await saveTeam(t);
+}
+
+/** Save the agent's targeting, campaign and company-knowledge settings. */
+export async function saveAgentSettings(patch: { targeting?: TeamState["targeting"]; campaign?: TeamState["campaign"]; knowledge?: TeamState["knowledge"] }) {
+  const t = await loadTeam();
+  if (patch.targeting) t.targeting = patch.targeting;
+  if (patch.campaign) t.campaign = patch.campaign;
+  if (patch.knowledge) t.knowledge = patch.knowledge;
+  log(t, { actor: "rep", who: "You", kind: "icp", text: `Updated ${Object.keys(patch).join(" and ")}` });
+  await saveTeam(t);
+  return t;
+}
+
+/** Your own list: rows of company, domain, name, title, email. Contacts you give us skip the people search. */
+export async function importLeads(rows: { company?: string; domain?: string; name?: string; title?: string; email?: string }[]) {
+  const t = await loadTeam();
+  const have = new Set(t.leads.map((l) => l.domain.toLowerCase()));
+  const added: Lead[] = [];
+  for (const r of rows.slice(0, 500)) {
+    const domain = (r.domain || (r.email?.split("@")[1] ?? "")).toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+    if (!domain || have.has(domain)) continue;
+    have.add(domain);
+    const lead: Lead = {
+      id: randomUUID().slice(0, 8),
+      company: r.company || domain.split(".")[0],
+      domain,
+      why: "Imported from your list",
+      sourceUrl: `https://${domain}`,
+      status: "new",
+      foundBy: "You (import)",
+      at: new Date().toISOString(),
+      stage: "matched",
+      history: [{ at: new Date().toISOString(), stage: "matched", actor: "rep", who: "You", note: "imported" }],
+    };
+    if (r.name && r.email) {
+      lead.contacts = [{ id: `${lead.id}-u0`, name: r.name, title: r.title ?? "", email: r.email.toLowerCase(), emailStatus: "unknown", source: "inferred", confidence: 0.8, persona: matchPersona(r.title ?? "", t.personas ?? [])?.label }];
+    }
+    added.push(lead);
+  }
+  t.leads.unshift(...added);
+  log(t, { actor: "rep", who: "You", kind: "discover", text: `Imported ${added.length} compan${added.length === 1 ? "y" : "ies"} from a list` });
+  await saveTeam(t);
+  await indexDocs(domainKey(t), added.map((l) => ({ id: `lead-${l.id}`, text: `${l.company} (${l.domain}). ${l.why}`, metadata: { kind: "lead", leadId: l.id, url: l.sourceUrl } })));
+  return added.length;
 }

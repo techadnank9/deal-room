@@ -124,7 +124,37 @@ export type Persona = {
   enabled: boolean;
 };
 
+export type Targeting = {
+  excludeServiceProviders: boolean;
+  excludeFreelancers: boolean;
+  excludeConsultants: boolean;
+  /** Drop any company whose name, description or reason contains one of these. */
+  excludeKeywords: string[];
+  /** If set, a company must mention at least one of these to qualify. */
+  mandatoryKeywords: string[];
+  /** high: only strong matches get emails; broad: anyone who fits; off: no score filter. */
+  precision: "high" | "broad" | "off";
+  /** Plain-language extra rules the AI checks, e.g. "Must sell to hospitals". */
+  extraCriteria: string;
+};
+export const DEFAULT_TARGETING: Targeting = { excludeServiceProviders: true, excludeFreelancers: true, excludeConsultants: true, excludeKeywords: [], mandatoryKeywords: [], precision: "broad", extraCriteria: "" };
+
+export type CampaignSettings = {
+  language: string;
+  tone: "friendly" | "direct" | "formal";
+  goal: "meeting" | "reply" | "demo";
+  cta: string;
+  followUpDays: number;
+  linkedinStep: boolean;
+};
+export const DEFAULT_CAMPAIGN: CampaignSettings = { language: "English", tone: "friendly", goal: "meeting", cta: "", followUpDays: 4, linkedinStep: true };
+
+export type Knowledge = { valueProp: string; pains: string; features: string; proof: string };
+
 export type TeamGtm = {
+  targeting?: Targeting;
+  campaign?: CampaignSettings;
+  knowledge?: Knowledge;
   personas?: Persona[];
   personasConfirmed?: boolean;
   /** The rep's first name (from the team room); outreach is signed by them, not by the agent. */

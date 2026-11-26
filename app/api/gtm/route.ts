@@ -1,5 +1,5 @@
 import { loadTeam, withCompany } from "@/lib/agents/team";
-import { analytics, reindexAll, buildIcp, decideExpansion, decideTouch, draftSequence, enrichLead, graph, mapCompetitors, memorySearch, moveStage } from "@/lib/gtm/engine";
+import { saveAgentSettings, importLeads, analytics, reindexAll, buildIcp, decideExpansion, decideTouch, draftSequence, enrichLead, graph, mapCompetitors, memorySearch, moveStage } from "@/lib/gtm/engine";
 import type { Persona, Stage } from "@/lib/gtm/types";
 import { generatePersonas, savePersonas } from "@/lib/gtm/personas";
 import { drain, topUp, usage } from "@/lib/sponsors/flexprice";
@@ -25,7 +25,13 @@ export async function GET(req: Request) {
 
 type Body = {
   url?: string;
-  action: "intake" | "expansion" | "competitors" | "enrich" | "draft" | "touch" | "stage" | "search" | "topup" | "drain" | "reindex" | "personas" | "savePersonas";
+  action: "intake" | "expansion" | "competitors" | "enrich" | "draft" | "touch" | "stage" | "search" | "topup" | "drain" | "reindex" | "personas" | "savePersonas" | "agentSettings" | "import" | "block" | "unblock" | "blocklist" | "bulk";
+  targeting?: import("@/lib/gtm/types").Targeting;
+  campaign?: import("@/lib/gtm/types").CampaignSettings;
+  knowledge?: import("@/lib/gtm/types").Knowledge;
+  rows?: { company?: string; domain?: string; name?: string; title?: string; email?: string }[];
+  entry?: string;
+  leadIds?: string[];
   personas?: Persona[];
   confirm?: boolean;
   intake?: { product: string; customers: string; pricing: string; constraints: string };
@@ -65,6 +71,33 @@ export async function POST(req: Request) {
           return Response.json(await memorySearch(b.q ?? ""));
         case "topup":
           return Response.json({ balance: await topUp(b.credits ?? 10) });
+        case "agentSettings":
+          return Response.json({ state: await saveAgentSettings({ targeting: b.targeting, campaign: b.campaign, knowledge: b.knowledge }) });
+        case "import": {
+          const n = await importLeads(b.rows ?? []);
+          const t = await loadTeam();
+          void import("@/lib/gtm/engine").then((m) => m.onLeadsFound(t.leads.slice(0, n)));
+          return Response.json({ imported: n, state: t });
+        }
+        case "block":
+        case "unblock":
+        case "blocklist": {
+          if (!scope.workspace) return Response.json({ error: "Log in to manage your do-not-contact list." }, { status: 401 });
+          const store = await import("@/lib/agent/store");
+          const e = (b.entry ?? "").trim().toLowerCase();
+          if (b.action === "block" && e) await store.suppress(scope.workspace.id, e.includes("@") && !e.startsWith("@") ? e : `@${e.replace(/^@/, "")}`, "manual");
+          if (b.action === "unblock" && e) await store.unsuppress(scope.workspace.id, e);
+          return Response.json({ blocked: await store.listSuppression(scope.workspace.id) });
+        }
+        case "bulk": {
+          const t = await loadTeam();
+          for (const id of b.leadIds ?? []) {
+            const l = t.leads.find((x) => x.id === id);
+            for (const m of l?.sequence ?? []) if (m.approval === "pending" && (m.channel === "email" || b.decision !== "approve")) await decideTouch(id, m.id, b.decision === "approve" ? "approve" : "reject");
+            if (b.decision === "reject") await moveStage(id, "lost", "rep");
+          }
+          return Response.json({ state: await loadTeam() });
+        }
         case "personas":
           await generatePersonas();
           return Response.json({ state: await loadTeam() });

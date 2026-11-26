@@ -4,6 +4,7 @@ import { arr, enm, llmJSON, obj, str } from "../llm";
 import { kvGet, kvSet } from "../db";
 import { researchSeller, searchWeb } from "../sponsors/telem";
 import { enrichCompany } from "../sponsors/glasser";
+import { passesKeywords, targetingRules } from "../gtm/targeting";
 
 // Your AI sales team. Model ids map to the 3D characters (cfo/tech/procurement GLBs) and ElevenLabs voices.
 export const TEAM = [
@@ -116,6 +117,11 @@ export async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
     t.icpSpec ??= cur.icpSpec;
     t.competitors ??= cur.competitors;
     t.intake ??= cur.intake;
+    t.personas ??= cur.personas;
+    t.personasConfirmed ??= cur.personasConfirmed;
+    t.targeting ??= cur.targeting;
+    t.campaign ??= cur.campaign;
+    t.knowledge ??= cur.knowledge;
     t.leads.sort((x, y) => y.at.localeCompare(x.at));
   }
   // GTM data is never dropped, even by a replace (prune/setup) that raced with the ICP or competitor builders.
@@ -125,6 +131,11 @@ export async function saveTeam(t: TeamState, opts: { replace?: boolean } = {}) {
       t.icpSpec ??= now.icpSpec;
       t.competitors ??= now.competitors;
       t.intake ??= now.intake;
+      t.personas ??= now.personas;
+      t.personasConfirmed ??= now.personasConfirmed;
+      t.targeting ??= now.targeting;
+      t.campaign ??= now.campaign;
+      t.knowledge ??= now.knowledge;
       const seenA = new Set((t.activity ?? []).map((a) => a.id));
       t.activity = [...(t.activity ?? []), ...(now.activity ?? []).filter((a) => !seenA.has(a.id))].sort((x, y) => y.at.localeCompare(x.at)).slice(0, 300);
       const byId = new Map(now.leads.map((l) => [l.id, l]));
@@ -323,7 +334,7 @@ export async function teamTurn(
       }>({
         label: "team-leads",
         maxTokens: 1500,
-        system: `You are ${me.name}, lead researcher on a sales team. From the search results, pick up to 5 REAL companies that would BUY what we sell (they have the problem we solve). NEVER pick our own company, and NEVER pick competitors or vendors that sell the same kind of product as us; skip media sites, directories, review sites and agencies. domain = the company's own website domain. why = one specific reason from the results. sourceUrl = the result URL it came from. Skip companies already in the lead list. The seller has rejected some companies as competitors or not buyers: never pick those, and never pick companies of the same kind as them. say = 1-2 natural spoken sentences to the seller (first name ${player}) about the buyers you found (do not mention competitors).${ACT}`,
+        system: `You are ${me.name}, lead researcher on a sales team. From the search results, pick up to 5 REAL companies that would BUY what we sell (they have the problem we solve). NEVER pick our own company, and NEVER pick competitors or vendors that sell the same kind of product as us; skip media sites, directories, review sites and agencies. domain = the company's own website domain. why = one specific reason from the results. sourceUrl = the result URL it came from. Skip companies already in the lead list. The seller has rejected some companies as competitors or not buyers: never pick those, and never pick companies of the same kind as them. say = 1-2 natural spoken sentences to the seller (first name ${player}) about the buyers you found (do not mention competitors).${targetingRules(t)}${ACT}`,
         user: `Our company: ${t.company ?? "?"} (${t.url ?? ""})\nWe sell: ${t.offering || "(unknown)"}\nIdeal customer: ${t.icp ?? "unknown"}\nAlready have: ${leadNames}\nRejected by the seller (competitors / not buyers): ${(t.excluded ?? []).join(", ") || "none"}\nSearch results (Telem):\n${sources.map((x, i) => `[${i + 1}] ${x.title} ${x.url}\n${x.snippet.slice(0, 400)}`).join("\n\n") || "(none)"}`,
         schema: obj({
           leads: arr(
@@ -350,6 +361,7 @@ export async function teamTurn(
       const rejected = new Set((t.excluded ?? []).map((x) => x.toLowerCase()));
       fresh = data.leads
         .filter((l) => !rejected.has(l.company.toLowerCase()))
+        .filter((l) => passesKeywords(`${l.company} ${l.domain} ${l.why}`, t).ok)
         .filter((l) => !l.sellsSameKindOfProduct)
         .filter(
           (l) =>

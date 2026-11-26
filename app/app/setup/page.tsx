@@ -33,7 +33,7 @@ export default function Setup() {
   const sig = signals ?? me?.workspace.settings.signals ?? null;
 
   return (
-    <div className="mx-auto max-w-[1100px] px-8 py-8">
+    <div className="mx-auto max-w-[1100px] px-4 md:px-8 py-8">
       <ol className="mb-8 flex flex-wrap items-center gap-2 text-sm">
         {STEPS.map((s, i) => (
           <li key={s} className="flex items-center gap-2">

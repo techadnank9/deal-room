@@ -24,7 +24,7 @@ export default function Dashboard() {
   const replied = leads.filter((l) => ["replied", "meeting", "won"].includes(l.stage ?? "")).length;
   const first = (me.name ?? me.email).split(/[ @]/)[0];
   return (
-    <div className="mx-auto max-w-[1100px] space-y-6 px-8 py-8">
+    <div className="mx-auto max-w-[1100px] space-y-6 px-4 md:px-8 py-8">
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">Hi {first}</h1>
         <p className="mt-1 text-muted">{t.company ? `Your agent is selling ${t.company}.` : "Let's set up your agent."}</p>
