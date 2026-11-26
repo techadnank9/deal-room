@@ -25,8 +25,14 @@ export function mailKey(): Buffer {
     cachedKey = k;
     return k;
   }
+  // No dedicated key: derive one from the database secret, which every server sharing this database already has.
+  // (Rotating the database password would make stored mailbox passwords unreadable; users would reconnect mailboxes.)
+  if (process.env.DATABASE_URL) {
+    cachedKey = createHash("sha256").update("deal-room-mail-key-v1|").update(process.env.DATABASE_URL).digest();
+    return cachedKey;
+  }
   if (process.env.NODE_ENV === "production") {
-    throw new Error("MAIL_SECRET_KEY is required in production");
+    throw new Error("MAIL_SECRET_KEY or DATABASE_URL is required in production");
   }
   console.warn("[mail] MAIL_SECRET_KEY not set; using an insecure dev-only key");
   cachedKey = createHash("sha256").update(DEV_FALLBACK).digest();
