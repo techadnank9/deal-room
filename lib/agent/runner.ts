@@ -96,6 +96,46 @@ function enabledSources(ws: Workspace): Source[] {
 /** What the last qualify pass looked at, for the Activity log ("scanned 30, picked 2; skipped X because Y"). */
 let lastScan: { scanned: number; misses: string[] } = { scanned: 0, misses: [] };
 
+/** Today's Product Hunt launches (public Atom feed): product, tagline and the maker's real name. */
+export async function productHuntLaunches(): Promise<SignalHit[]> {
+  const xml = await fetch("https://www.producthunt.com/feed", { headers: { "User-Agent": "Mozilla/5.0 (compatible; DealRoom/1.0)" }, signal: AbortSignal.timeout(15000) })
+    .then((r) => (r.ok ? r.text() : ""))
+    .catch(() => "");
+  const since = Date.now() - 3 * 86400e3;
+  const un = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  return [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)]
+    .map((m) => {
+      const e = m[1];
+      const title = un(e.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? "").trim();
+      const tagline = un(un(e.match(/<content[^>]*>([\s\S]*?)<\/content>/)?.[1] ?? "")).replace(/<[^>]+>/g, " ").replace(/Discussion\s*\|\s*Link/, "").replace(/\s+/g, " ").trim();
+      const maker = un(e.match(/<author>\s*<name>([\s\S]*?)<\/name>/)?.[1] ?? "").trim();
+      const link = e.match(/<link[^>]*href="([^"]+)"/)?.[1] ?? "https://www.producthunt.com";
+      const at = e.match(/<published>([^<]+)<\/published>/)?.[1] ?? "";
+      return { title, tagline, maker, link, at };
+    })
+    .filter((x) => x.title && (!x.at || new Date(x.at).getTime() > since))
+    .slice(0, 30)
+    .map((x) => ({ company: x.title.slice(0, 60), domain: "", kind: "launch" as const, text: `Launched on Product Hunt: "${x.title}: ${x.tagline.slice(0, 140)}"${x.maker ? ` by ${x.maker}` : ""}`, sourceUrl: x.link, at: new Date().toISOString(), strength: 0.75, data: { maker: x.maker, tagline: x.tagline } }));
+}
+
+/** A launch's own website, or "" when no result clearly is it (never guess name.com: that is usually someone else). */
+export async function launchSite(name: string, tagline: string): Promise<string> {
+  const { sources } = await searchWeb(`${name} ${tagline.slice(0, 80)}`, 8).catch(() => ({ sources: [] as { url: string }[] }));
+  // Match on the product's first word ("Upsolve Harness 2.0" -> upsolve), in the site's own domain, not an aggregator's subdomain.
+  const want = (name.toLowerCase().split(/[^a-z0-9]+/).find((w) => w.length >= 3) ?? "").slice(0, 12);
+  const builder = /\.(lovable\.app|bolt\.host|replit\.app|vercel\.app|netlify\.app|onrender\.com|framer\.website|webflow\.io)$/i;
+  const skip = /producthunt|linkedin|twitter|x\.com|facebook|youtube|github|medium|reddit|crunchbase|apps\.apple|play\.google|chromewebstore|substack|ycombinator/i;
+  for (const s of sources) {
+    let host = "";
+    try {
+      host = new URL(s.url).hostname.replace(/^www\./, "");
+    } catch {}
+    const own = builder.test(host) ? host : host.split(".").slice(-2).join(".");
+    if (host && !skip.test(host) && want.length >= 3 && own.replace(/[^a-z0-9]/g, "").includes(want)) return host;
+  }
+  return "";
+}
+
 async function leadsFromHits(hits: SignalHit[], label: string): Promise<Lead[]> {
   const t = await loadTeam();
   if (!hits.length) return [];
@@ -119,7 +159,8 @@ async function leadsFromHits(hits: SignalHit[], label: string): Promise<Lead[]> 
     const name = (p.company || h.company).trim();
     if (!name || have.has(name.toLowerCase())) continue;
     if (!passesKeywords(`${name} ${h.text} ${p.why}`, t).ok) continue;
-    const url = h.domain || p.domain || (await resolveCompanyUrl(name).catch(() => ""));
+    const hint = typeof h.data?.tagline === "string" ? h.data.tagline : "";
+    const url = h.domain || p.domain || (hint ? await launchSite(name, hint) : await resolveCompanyUrl(name).catch(() => ""));
     if (!url) continue;
     const domain = url.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
     out.push({
@@ -133,6 +174,7 @@ async function leadsFromHits(hits: SignalHit[], label: string): Promise<Lead[]> 
       at: new Date().toISOString(),
       stage: "matched",
       signals: [{ kind: h.kind === "funding" ? "funding" : h.kind === "launch" ? "launch" : h.kind === "hiring" ? "hiring" : "other", text: h.text, sourceUrl: h.sourceUrl }],
+      ...(typeof h.data?.maker === "string" && h.data.maker ? { maker: h.data.maker } : {}),
     });
   }
   if (out.length) {
@@ -184,7 +226,8 @@ async function runSource(ws: Workspace, s: AgentState): Promise<number> {
         const host = new URL(h.url!).hostname.replace(/^www\./, "");
         return { company: title.split(/\s[–—-]\s|:/)[0].trim().slice(0, 60), domain: host, kind: "launch" as const, text: `Launched on Show HN: "${title.slice(0, 140)}"`, sourceUrl: `https://news.ycombinator.com/item?id=${h.objectID}`, at: new Date().toISOString(), strength: 0.75 };
       });
-    found = await leadsFromHits(hits, "Show HN launches");
+    hits.push(...(await productHuntLaunches()));
+    found = await leadsFromHits(hits, "new launches");
     if (found.length) void onLeadsFound(found);
   } else if (src === "builders") {
     // Products just shipped with AI app builders (Lovable, Bolt, Replit, v0, Cursor): mostly solo founders and tiny teams.
@@ -206,7 +249,9 @@ async function runSource(ws: Workspace, s: AgentState): Promise<number> {
       } catch {}
       // An app on a builder's subdomain has no company domain yet: let the qualifier find the real site, or skip it.
       const own = host && !hosted.test(host) && !/linkedin\.com|reddit\.com|x\.com|twitter\.com|medium\.com|youtube\.com|producthunt\.com|indiehackers\.com|lovable\.dev|replit\.com|bolt\.new|cursor\.com|vercel\.com/i.test(host);
-      return { company: p.title.split(/\s[|–—-]\s/)[0].slice(0, 60), domain: own ? host : "", kind: "launch" as const, text: `${p.title.slice(0, 120)}: ${p.snippet.slice(0, 200)}`, sourceUrl: p.url, at: new Date().toISOString(), strength: 0.7 };
+      // An app still on a builder's subdomain (foo.lovable.app) is its own site: the owner is read off it later.
+      const app = host && hosted.test(host) && host.split(".").length > 2 ? host : "";
+      return { company: p.title.split(/\s[|–—-]\s/)[0].slice(0, 60), domain: own ? host : app, kind: "launch" as const, text: `${p.title.slice(0, 120)}: ${p.snippet.slice(0, 200)}`, sourceUrl: p.url, at: new Date().toISOString(), strength: 0.7 };
     });
     found = await leadsFromHits(hits, "AI-built apps");
     if (found.length) void onLeadsFound(found);
@@ -461,7 +506,7 @@ export async function tickOnce() {
             const month = await usageThisMonth(ws.id);
             const plan = PLANS[ws.plan];
             const underPlan = month.enrich < plan.contactsPerMonth;
-            if (s.runs < 3 && now - s.lastSourceAt > 2.5 * 3600e3 && (s.found ?? 0) < ws.settings.dailyLeadTarget) {
+            if (s.runs < 6 && now - s.lastSourceAt > 75 * 60e3 && (s.found ?? 0) < ws.settings.dailyLeadTarget) {
               s.lastSourceAt = now;
               s.runs++;
               if (underPlan) s.found = (s.found ?? 0) + (await step("find leads", () => runSource(ws, s), { rotation: s.rotation }));

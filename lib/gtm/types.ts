@@ -21,7 +21,7 @@ export type Contact = {
   persona?: string;
   linkedin?: string;
   previousCompanies?: string[];
-  source: "glasser" | "inferred";
+  source: "glasser" | "inferred" | "site";
   confidence: number;
   /** The seller's own list this person is filed under (one list per contact). */
   list?: string;
@@ -52,6 +52,8 @@ export type Touch = {
 export type StageEvent = { at: string; stage: Stage; actor: Actor; who: string; note?: string };
 
 export type LeadGtm = {
+  /** The maker named on the launch post (Product Hunt), used to find the owner's email. */
+  maker?: string;
   stage?: Stage;
   industry?: string;
   hq?: string;

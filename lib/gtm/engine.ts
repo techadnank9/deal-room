@@ -4,6 +4,7 @@ import { arr, enm, int, llmJSON, obj, str } from "../llm";
 import { loadTeam, saveTeam, type Lead, type TeamState } from "../agents/team";
 import { searchWeb } from "../sponsors/telem";
 import { enrichCompany, findEmail } from "../sponsors/glasser";
+import { findSiteOwner } from "./siteOwner";
 import { matchPersona, targetTitles } from "./personas";
 import { campaignOf, clearsPrecision, passesKeywords, sendable, targetingOf } from "./targeting";
 import { canSpend, meter, PRICES } from "../sponsors/flexprice";
@@ -237,6 +238,13 @@ export async function enrichLead(leadId: string, actor: Actor = "agent"): Promis
       const email = guessEmail(p.name, l.domain);
       contacts.push({ id: `${l.id}-i${i}`, name: p.name, title: p.title, email, emailStatus: email ? (mx ? "guessed" : "no-mx") : "unknown", source: "inferred", confidence: mx ? 0.45 : 0.2 });
     }
+  }
+  // A small, new product: providers know nobody there yet, so read the owner off the site itself.
+  if (!contacts.some((c) => c.email && sendable(c.emailStatus, t.prefs))) {
+    const owners = await findSiteOwner(l.domain, { company: l.company, maker: l.maker, context: l.why }).catch(() => []);
+    owners.forEach((c, i) => contacts.unshift({ ...c, id: `${l.id}-s${i}` }));
+    for (const c of contacts.filter((x) => x.source === "site")) c.persona = matchPersona(c.title, personas, l.size ?? e?.data.employees, `${l.company} ${l.why}`)?.label;
+    if (owners.length) log(t, { actor: "agent", who: "Maya", kind: "search", text: `${l.company}: found the owner on their own site (${owners.map((c) => `${c.name}, ${c.emailStatus}`).join("; ")})`, leadId });
   }
   l.contacts = contacts;
   l.industry = data.industry || e?.data.industry;
