@@ -12,6 +12,8 @@ export type BuildMessageInput = {
   /** Prior thread Message-IDs, oldest first */
   references?: string | string[];
   unsubscribeUrl: string;
+  /** Sender's physical postal address (required by CAN-SPAM for commercial email). */
+  address?: string;
   messageId?: string;
 };
 
@@ -44,7 +46,8 @@ function domainOf(email: string): string {
 
 export function buildMessage(input: BuildMessageInput): OutboundMessage {
   const { from, to, subject, unsubscribeUrl } = input;
-  const footer = `If this isn't relevant, reply 'no' or unsubscribe: ${unsubscribeUrl}`;
+  const addr = input.address?.trim().replace(/\s*\n\s*/g, ", ");
+  const footer = `If this isn't relevant, reply 'no' or unsubscribe: ${unsubscribeUrl}${addr ? `\n${addr}` : ""}`;
   const body = input.text.replace(/\r\n/g, "\n").trimEnd();
   const text = `${body}\n\n--\n${footer}\n`;
 
@@ -57,7 +60,7 @@ export function buildMessage(input: BuildMessageInput): OutboundMessage {
     `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222">\n` +
     `${paragraphs}\n` +
     `<p style="margin:24px 0 0;font-size:12px;color:#888">If this isn't relevant, reply 'no' or ` +
-    `<a href="${safeUrl}" style="color:#888">unsubscribe</a>.</p>\n</body></html>`;
+    `<a href="${safeUrl}" style="color:#888">unsubscribe</a>.${addr ? `<br>${escapeHtml(addr)}` : ""}</p>\n</body></html>`;
 
   const messageId = normalizeMessageId(input.messageId ?? `${randomUUID()}@${domainOf(from.email)}`);
   const inReplyTo = input.inReplyTo ? normalizeMessageId(input.inReplyTo) : undefined;

@@ -1,6 +1,6 @@
 // Storage for the always-on agent: connected mailboxes, the send queue, replies, do-not-contact list.
 import { randomUUID } from "node:crypto";
-import { db } from "../db";
+import { db, kvGet, kvSet } from "../db";
 import { seal, type Endpoint, type Mailbox } from "../mail";
 
 /* ---------- mailboxes ---------- */
@@ -205,4 +205,24 @@ export async function unsuppress(workspaceId: string, email: string) {
 }
 export async function listSuppression(workspaceId: string): Promise<{ email: string; reason: string | null }[]> {
   return (await db()).all(`select email, reason from suppression where workspace_id = ? order by at desc limit 500`, [workspaceId]);
+}
+
+/* ---------- bounce brake ---------- */
+
+export async function bounceStats(mailboxId: string, days = 14): Promise<{ sent: number; bounced: number }> {
+  const since = new Date(Date.now() - days * 864e5).toISOString();
+  const d = await db();
+  const s = await d.all<{ n: number | string }>(`select count(*) as n from outbox where mailbox_id = ? and status = 'sent' and sent_at >= ?`, [mailboxId, since]);
+  const b = await d.all<{ n: number | string }>(`select count(*) as n from inbound where mailbox_id = ? and category = 'bounce' and received_at >= ?`, [mailboxId, since]);
+  return { sent: Number(s[0]?.n ?? 0), bounced: Number(b[0]?.n ?? 0) };
+}
+export async function mailboxPause(mailboxId: string): Promise<{ reason: string; at: string } | null> {
+  const p = await kvGet<{ reason: string; at: string }>(`mailbox-pause:${mailboxId}`);
+  return p?.reason ? p : null;
+}
+export async function pauseMailbox(mailboxId: string, reason: string) {
+  await kvSet(`mailbox-pause:${mailboxId}`, { reason, at: new Date().toISOString() });
+}
+export async function resumeMailbox(mailboxId: string) {
+  await kvSet(`mailbox-pause:${mailboxId}`, null);
 }

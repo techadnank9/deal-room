@@ -32,6 +32,11 @@ export function passesKeywords(text: string, t: T): { ok: boolean; why?: string 
   return { ok: true };
 }
 
+/** Email statuses the agent may write to and send to. Unverified guesses bounce and hurt the domain: never. */
+export function sendable(status: string | undefined, prefs?: { allowCatchAll?: boolean }): boolean {
+  return status === "verified" || (status === "risky" && prefs?.allowCatchAll !== false);
+}
+
 /** Does this lead's score clear the precision bar for getting an email? */
 export function clearsPrecision(score: number | undefined, t: T): boolean {
   const p = targetingOf(t).precision;

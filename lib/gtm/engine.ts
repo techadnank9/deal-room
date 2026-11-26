@@ -5,7 +5,7 @@ import { loadTeam, saveTeam, type Lead, type TeamState } from "../agents/team";
 import { searchWeb } from "../sponsors/telem";
 import { enrichCompany, findEmail } from "../sponsors/glasser";
 import { matchPersona, targetTitles } from "./personas";
-import { campaignOf, clearsPrecision, passesKeywords, targetingOf } from "./targeting";
+import { campaignOf, clearsPrecision, passesKeywords, sendable, targetingOf } from "./targeting";
 import { canSpend, meter, PRICES } from "../sponsors/flexprice";
 import { indexDocs, mossAnswer, search } from "../sponsors/moss";
 import type { Activity, Actor, Competitor, Contact, IcpSpec, Intake, Signal, Stage, Touch } from "./types";
@@ -307,7 +307,7 @@ export async function onLeadsFound(leads: Lead[]) {
   for (const l of after.leads.filter((x) => leads.some((y) => y.id === x.id) && !x.sequence?.length)) {
     // Only write automatically when we found someone who matches one of your personas, with a usable email.
     const hasPersona = after.prefs?.personaOnly !== false && (after.personas ?? []).some((p) => p.enabled);
-    const ok = (l.contacts ?? []).some((c) => c.email && ["verified", "risky", "mx-valid", "guessed"].includes(c.emailStatus) && (!hasPersona || c.persona)) && l.stage !== "lost" && clearsPrecision(l.score, after);
+    const ok = (l.contacts ?? []).some((c) => c.email && sendable(c.emailStatus, after.prefs) && (!hasPersona || c.persona)) && l.stage !== "lost" && clearsPrecision(l.score, after);
     if (ok) await draftSequence(l.id, { enrich: false }).catch((e) => console.error("[gtm] draft", e));
   }
 }
@@ -332,7 +332,11 @@ export async function draftSequence(leadId: string, opts: { enrich?: boolean } =
     return i === -1 ? 50 : i;
   };
   const usable = (l.contacts ?? []).filter((c) => c.email && c.emailStatus !== "no-mx" && c.emailStatus !== "invalid");
-  const who = [...usable].sort((a, b) => rankOf(a) - rankOf(b) || Number(b.emailStatus === "verified") - Number(a.emailStatus === "verified"))[0] ?? l.contacts?.[0];
+  // People we can actually send to (verified, or catch-all if allowed) come first; then persona rank; then verified.
+  const who =
+    [...usable].sort(
+      (a, b) => Number(sendable(b.emailStatus, t.prefs)) - Number(sendable(a.emailStatus, t.prefs)) || rankOf(a) - rankOf(b) || Number(b.emailStatus === "verified") - Number(a.emailStatus === "verified"),
+    )[0] ?? l.contacts?.[0];
   const persona = t.icpSpec?.personas.find((p) => who?.title && who.title.toLowerCase().includes(p.function.toLowerCase())) ?? t.icpSpec?.personas[0];
   // The confirmed persona this person matches: its pains, angle and ask shape the email.
   const buyer = (t.personas ?? []).find((p) => p.enabled && p.label === who?.persona) ?? (t.personas ?? []).find((p) => p.enabled);
@@ -343,16 +347,17 @@ export async function draftSequence(leadId: string, opts: { enrich?: boolean } =
   const facts = [...(l.signals ?? []).map((s) => `${s.text} (${s.sourceUrl})`), ...mem.hits.filter((h) => h.metadata?.leadId === l!.id).map((h) => h.text)];
   const variant: "A" | "B" = t.leads.filter((x) => x.sequence?.length).length % 2 ? "B" : "A";
   const cmp = campaignOf(t);
-  const { data } = await llmJSON<{ email1: { subject: string; body: string }; linkedin: { body: string }; email2: { subject: string; body: string } }>({
+  const { data } = await llmJSON<{ email1: { subject: string; body: string }; linkedin: { body: string }; email2: { subject: string; body: string }; email3: { body: string } }>({
     label: "gtm-sequence",
     maxTokens: 1500,
-    system: `You are Arjun, outbound writer. Write a 3-touch sequence from a rep at ${t.company ?? "our company"} to ${who ? `${who.name} (${who.title})` : `the ${persona?.title ?? "buyer"}`} at ${l.company}. Weave in ONE specific trigger signal from the facts (name it concretely) and tie it to our value. Persona tone: ${persona?.seniority === "C-level" ? "brief, outcome and money first, max 70 words" : "practical, specific, max 100 words"}. ${buyer ? `This person is a "${buyer.label}". Their pains: ${buyer.pains.join("; ")}. The theme to lead with (say it in your own natural words, never copy this sentence): ${buyer.angle} ` : ""}CTA: ${cmp.cta.trim() || buyer?.cta || (cmp.goal === "demo" ? "booking a short demo" : cmp.goal === "reply" ? "a one-line reply" : variant === "A" ? "a 15-minute call this week" : "permission to send a 2-minute teardown video")}. Tone: ${cmp.tone}. Write in ${cmp.language}. email1 = first touch. linkedin = connection note under 280 characters. email2 = follow-up ${cmp.followUpDays} days later, new angle, under 70 words.${t.knowledge ? ` What we know about our own product (use it, don't invent other claims): value: ${t.knowledge.valueProp}; pains we solve: ${t.knowledge.pains}; features: ${t.knowledge.features}; proof: ${t.knowledge.proof}.` : ""} Sign every email and note as ${t.rep ?? "the team"} from ${t.company ?? "our company"} (the rep sends it, not you). Never use placeholders like [Name]; use the real names given or a role. No hype words.`,
+    system: `You are Arjun, outbound writer. Write a 3-touch sequence from a rep at ${t.company ?? "our company"} to ${who ? `${who.name} (${who.title})` : `the ${persona?.title ?? "buyer"}`} at ${l.company}. Weave in ONE specific trigger signal from the facts (name it concretely) and tie it to our value. Persona tone: ${persona?.seniority === "C-level" ? "brief, outcome and money first, 40-60 words" : "practical, specific, 50-80 words"}. ${buyer ? `This person is a "${buyer.label}". Their pains: ${buyer.pains.join("; ")}. The theme to lead with (say it in your own natural words, never copy this sentence): ${buyer.angle} ` : ""}CTA: ${cmp.cta.trim() || buyer?.cta || (cmp.goal === "demo" ? "booking a short demo" : cmp.goal === "reply" ? "a one-line reply" : variant === "A" ? "a 15-minute call this week" : "permission to send a 2-minute teardown video")}. Tone: ${cmp.tone}. Write in ${cmp.language}. email1 = first touch. linkedin = connection note under 280 characters. email2 = follow-up ${cmp.followUpDays} days later in the same thread, one new angle or useful detail, under 60 words. email3 = a short, polite last note ${cmp.followUpDays * 2 + 1} days after the first, under 40 words: says this is the last email, leaves the door open, asks one easy yes/no question. Plain text, at most one question per email, no links, no attachments, no "just following up", no "hope you are well".${t.knowledge ? ` What we know about our own product (use it, don't invent other claims): value: ${t.knowledge.valueProp}; pains we solve: ${t.knowledge.pains}; features: ${t.knowledge.features}; proof: ${t.knowledge.proof}.` : ""} Sign every email and note as ${t.rep ?? "the team"} from ${t.company ?? "our company"} (the rep sends it, not you). Never use placeholders like [Name]; use the real names given or a role. No hype words.`,
     user: `We sell: ${t.offering}\nICP: ${t.icp ?? ""}\nProspect: ${l.company} (${l.domain}), ${l.industry ?? ""}, ${l.size ?? "?"} employees, funding ${l.funding ?? "?"}\nFacts:\n${facts.map((f) => `- ${f}`).join("\n") || l.why}`,
-    schema: obj({ email1: obj({ subject: str(), body: str() }), linkedin: obj({ body: str() }), email2: obj({ subject: str(), body: str() }) }),
+    schema: obj({ email1: obj({ subject: str(), body: str() }), linkedin: obj({ body: str() }), email2: obj({ subject: str(), body: str() }), email3: obj({ body: str() }) }),
     mock: () => ({
       email1: { subject: `${l!.company}: ${l!.why.slice(0, 40)}`, body: `Hi ${who?.name.split(" ")[0] ?? "there"},\n\nSaw that ${l!.why.toLowerCase()}. Teams at that stage usually hit the problem ${t.company} solves.\n\nOpen to 15 minutes this week?` },
       linkedin: { body: `Hi ${who?.name.split(" ")[0] ?? ""}, following ${l!.company}'s recent news. Would love to connect.` },
       email2: { subject: "Re: quick follow-up", body: "One more idea on this, happy to share a short teardown." },
+      email3: { body: "Last note from me. Should I close this out, or is it worth a quick chat later?" },
     }),
   });
   const cites = (l.signals ?? []).map((s) => s.sourceUrl).filter(Boolean).slice(0, 3) as string[];
@@ -369,9 +374,9 @@ export async function draftSequence(leadId: string, opts: { enrich?: boolean } =
     draftedBy: "Arjun",
     citations: cites,
   });
-  l.sequence = [mk(1, "email", 0, data.email1.body, data.email1.subject), ...(cmp.linkedinStep ? [mk(2, "linkedin", 1, data.linkedin.body)] : []), mk(3, "email", cmp.followUpDays, data.email2.body, data.email2.subject)];
+  l.sequence = [mk(1, "email", 0, data.email1.body, data.email1.subject), ...(cmp.linkedinStep ? [mk(2, "linkedin", 1, data.linkedin.body)] : []), mk(3, "email", cmp.followUpDays, data.email2.body, data.email2.subject), ...(data.email3?.body ? [mk(4, "email", cmp.followUpDays * 2 + 1, data.email3.body)] : [])];
   l.email = { subject: data.email1.subject, body: data.email1.body };
-  log(t, { actor: "agent", who: "Arjun", kind: "draft", text: `Drafted a 3-touch sequence (variant ${variant}) for ${l.company}; waiting for your approval`, leadId });
+  log(t, { actor: "agent", who: "Arjun", kind: "draft", text: `Drafted a ${l.sequence.length}-touch sequence (variant ${variant}) for ${l.company}; waiting for your approval`, leadId });
   await saveTeam(t);
   await indexDocs(domainKey(t), [{ id: `msg-${l.id}`, text: `Outreach to ${l.company}: ${data.email1.subject}. ${data.email1.body}`, metadata: { kind: "message", leadId: l.id } }]);
   return t;

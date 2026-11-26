@@ -6,7 +6,19 @@ import { useState } from "react";
 import { Btn, Empty, Pill, post, usePoll, type Gtm, type WorkspaceInfo } from "@/components/app/ui";
 import { DEFAULT_PREFS, type Prefs } from "@/lib/gtm/types";
 
-type Mailbox = { id: string; email: string; fromName: string; dailyCap: number; warmupStart?: string; status: string; smtpHost: string };
+type Check = { ok: boolean; label: string; detail: string; fix?: string };
+type Mailbox = {
+  id: string;
+  email: string;
+  fromName: string;
+  dailyCap: number;
+  warmupStart?: string;
+  status: string;
+  smtpHost: string;
+  dns?: { domain: string; checks: Record<"mx" | "spf" | "dkim" | "dmarc", Check>; allSet: boolean; toFix: number } | null;
+  pause?: { reason: string; at: string } | null;
+  bounces?: { sent: number; bounced: number };
+};
 type Preset = { id: string; label: string; help: string };
 type Settings = WorkspaceInfo["workspace"]["settings"];
 
@@ -122,6 +134,7 @@ function Preferences() {
   const { data, reload } = usePoll<Gtm>("/api/gtm", 0);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const p: Prefs = { ...DEFAULT_PREFS, ...(data?.state.prefs ?? {}) };
+  const [addr, setAddr] = useState<string | null>(null);
   async function set(patch: Partial<Prefs>) {
     setMsg(null);
     try {
@@ -140,6 +153,19 @@ function Preferences() {
         <div className="divide-y divide-line">
           <Toggle on={p.autoEnrich} onChange={(v) => void set({ autoEnrich: v })} label="Find emails automatically" sub="Look up and verify the right people's emails for every new lead. Each lookup uses credits. Off: you press “Find email” on the leads you want." />
           <Toggle on={p.personaOnly} onChange={(v) => void set({ personaOnly: v })} label="Only write to people who match a persona" sub="The agent drafts emails only for people whose role matches one of your personas. Off: it also writes to the most senior person it found." />
+          <Toggle on={p.allowCatchAll !== false} onChange={(v) => void set({ allowCatchAll: v })} label="Also email catch-all domains" sub="Some company mail servers accept every address, so an email there can't be fully verified. Small bounce risk. Addresses that are only a guess are never emailed." />
+          <div className="py-3">
+            <label htmlFor="postal" className="block text-sm font-medium">
+              Company postal address {!p.postalAddress?.trim() && <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs text-rose-700">Required before sending</span>}
+            </label>
+            <p className="text-sm text-muted">Shown in small print under every email. US law (CAN-SPAM) requires a real postal address in commercial email; a PO box or registered agent address is fine.</p>
+            <div className="mt-2 flex gap-2">
+              <input id="postal" value={addr ?? p.postalAddress ?? ""} onChange={(e) => setAddr(e.target.value)} placeholder="e.g. 548 Market St, San Francisco, CA 94104" className={input} />
+              <button className={Btn.dark} disabled={addr === null || addr.trim() === (p.postalAddress ?? "")} onClick={() => void set({ postalAddress: (addr ?? "").trim() }).then(() => setAddr(null))}>
+                Save
+              </button>
+            </div>
+          </div>
         </div>
       )}
       <Status msg={msg} />
@@ -233,11 +259,54 @@ function Mailboxes() {
                 </div>
                 <div className="flex items-center gap-2">
                   {ramping && <Pill tone="amber">Ramping up</Pill>}
-                  <Pill tone={b.status === "ok" ? "green" : "red"}>{b.status === "ok" ? "Connected" : b.status}</Pill>
+                  {b.pause ? <Pill tone="red">Paused</Pill> : <Pill tone={b.status === "ok" ? "green" : "red"}>{b.status === "ok" ? "Connected" : b.status}</Pill>}
                   <button className={Btn.ghost} onClick={() => remove(b)} disabled={removing === b.id} aria-label={`Remove ${b.email}`}>
                     {removing === b.id ? "Removing…" : "Remove"}
                   </button>
                 </div>
+                {b.pause && (
+                  <div className="w-full rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                    {b.pause.reason} Check the bounced addresses in Inbox, then{" "}
+                    <button
+                      className="font-medium underline"
+                      onClick={async () => {
+                        await fetch("/api/mailboxes", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: b.id, action: "resume" }) });
+                        await reload();
+                      }}
+                    >
+                      resume sending
+                    </button>
+                    .
+                  </div>
+                )}
+                {b.dns && (
+                  <details className="w-full text-sm">
+                    <summary className="cursor-pointer text-muted">
+                      Domain health for {b.dns.domain}:{" "}
+                      {b.dns.allSet ? <span className="font-medium text-emerald-700">all set</span> : <span className="font-medium text-rose-700">{b.dns.toFix} to fix</span>}
+                      {b.bounces && b.bounces.sent > 0 && (
+                        <span>
+                          {" "}
+                          · bounces {b.bounces.bounced} of {b.bounces.sent} in 14 days ({Math.round((100 * b.bounces.bounced) / b.bounces.sent)}%; keep it under 3%)
+                        </span>
+                      )}
+                    </summary>
+                    <ul className="mt-2 space-y-1.5">
+                      {(["mx", "spf", "dkim", "dmarc"] as const).map((k) => {
+                        const c = b.dns!.checks[k];
+                        return (
+                          <li key={k} className="flex gap-2">
+                            <span className={c.ok ? "text-emerald-700" : "text-rose-700"}>{c.ok ? "✓" : "✕"}</span>
+                            <span>
+                              <span className="font-medium">{c.label}</span> <span className="break-all text-muted">{c.detail}</span>
+                              {c.fix && <span className="block text-xs text-rose-700">{c.fix}</span>}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </details>
+                )}
               </li>
             );
           })}

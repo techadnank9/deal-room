@@ -184,5 +184,9 @@ export type Prefs = {
   personaOnly: boolean;
   /** Average deal size in dollars, for the pipeline value on the dashboard. */
   dealSize?: number;
+  /** Physical postal address shown in every email footer. US law (CAN-SPAM) requires one; nothing sends without it. */
+  postalAddress?: string;
+  /** Also email addresses on catch-all domains (can't be verified; small bounce risk). Unverified guesses are never emailed. */
+  allowCatchAll?: boolean;
 };
 export const DEFAULT_PREFS: Prefs = { autoEnrich: true, personaOnly: true };

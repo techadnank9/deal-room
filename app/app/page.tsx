@@ -22,6 +22,7 @@ export default function Dashboard() {
     ["We learned your business", Boolean(t.icpSpec), "/app/setup", "Finish"],
     ["You confirmed your buyers", Boolean(t.personasConfirmed), "/app/setup", "Confirm"],
     ["Mailbox connected", Boolean(boxes?.mailboxes.length), "/app/settings", "Connect"],
+    ["Postal address added (required in every email)", Boolean(t.prefs?.postalAddress?.trim()), "/app/settings#prefs", "Add"],
     ["Agent is running", me.workspace.settings.active, "/app/agent", "Start"],
   ];
   const done = steps.filter((s) => s[1]).length;

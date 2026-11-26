@@ -12,8 +12,8 @@ import { decideTouch, draftSequence, enrichLead, markReplied, markTouchSent, onL
 import { buildMessage, cleanReply, effectiveDailyCap, fetchNewMessages, isAutoReply, isBounce, makeUnsubToken, matchThread, normalizeMessageId, sendMail } from "../mail";
 import { hiringSignal, newsSignals, recentFormD, type SignalHit } from "../signals";
 import { bumpUsage, getWorkspace, listActiveWorkspaces, PLANS, usageThisMonth, usageToday, workspaceDomain, type Workspace } from "../workspace";
-import { clearsPrecision, fitExamples, passesKeywords, targetingRules } from "../gtm/targeting";
-import { allMailboxes, cancelLeadOutbox, dueOutbox, enqueue, isSuppressed, listMailboxes, markOut, saveInbound, sentMessages, sentTodayFrom, setMailboxCursor, suppress, type StoredMailbox } from "./store";
+import { clearsPrecision, fitExamples, passesKeywords, sendable, targetingRules } from "../gtm/targeting";
+import { allMailboxes, bounceStats, cancelLeadOutbox, dueOutbox, enqueue, isSuppressed, listMailboxes, mailboxPause, markOut, pauseMailbox, saveInbound, sentMessages, sentTodayFrom, setMailboxCursor, suppress, type StoredMailbox } from "./store";
 
 export const APP_URL = process.env.APP_URL || "https://deelroomlive.onrender.com";
 
@@ -32,6 +32,8 @@ async function setState(id: string, s: AgentState) {
   await kvSet(stateKey(id), s);
 }
 function note(s: AgentState, text: string) {
+  // The same message within 12 hours is not repeated (e.g. "holding emails" while a setting is missing).
+  if (s.log.some((x) => x.text === text && Date.now() - new Date(x.at).getTime() < 12 * 3600e3)) return;
   s.log.unshift({ at: new Date().toISOString(), text });
 }
 
@@ -201,7 +203,7 @@ async function runDrafts(ws: Workspace, s: AgentState) {
   const hasPersona = t.prefs?.personaOnly !== false && (t.personas ?? []).some((p) => p.enabled);
   const ready = t.leads
     .filter((l) => l.enriched === "done" && !l.sequence?.length && !["lost", "won"].includes(l.stage ?? ""))
-    .filter((l) => (l.contacts ?? []).some((c) => c.email && ["verified", "risky", "mx-valid", "guessed"].includes(c.emailStatus) && (!hasPersona || c.persona)))
+    .filter((l) => (l.contacts ?? []).some((c) => c.email && sendable(c.emailStatus, t.prefs) && (!hasPersona || c.persona)))
     .filter((l) => l.stage !== "lost" && clearsPrecision(l.score, t))
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
     .slice(0, 3);
@@ -223,9 +225,14 @@ async function runDrafts(ws: Workspace, s: AgentState) {
 /* ---------- plan sends ---------- */
 
 async function planSends(ws: Workspace, s: AgentState) {
-  const boxes = (await listMailboxes(ws.id)).filter((b) => b.status !== "error");
+  const paused = await Promise.all((await listMailboxes(ws.id)).map(async (b) => ((await mailboxPause(b.id)) ? null : b)));
+  const boxes = paused.filter((b): b is StoredMailbox => !!b && b.status !== "error");
   if (!boxes.length) return;
   const t = await loadTeam();
+  if (!t.prefs?.postalAddress?.trim()) {
+    note(s, "Holding approved emails: add your company's postal address in Settings → Company preferences (the law requires it in every cold email)");
+    return;
+  }
   let n = 0;
   for (const l of t.leads) {
     if (["replied", "meeting", "won", "lost"].includes(l.stage ?? "")) continue;
@@ -234,7 +241,11 @@ async function planSends(ws: Workspace, s: AgentState) {
     for (const m of seq) {
       if (m.sentAt) continue;
       if (await isSuppressed(ws.id, m.to!)) continue;
-      const box = boxes[(l.id.charCodeAt(0) + m.step) % boxes.length];
+      // Never send to an address the verifier couldn't confirm (unverified guesses bounce and hurt the domain).
+      const person = (l.contacts ?? []).find((c) => c.email?.toLowerCase() === m.to!.toLowerCase());
+      if (person && !sendable(person.emailStatus, t.prefs)) continue;
+      // The whole thread goes out from one mailbox, so follow-ups land in the same conversation.
+      const box = boxes[l.id.charCodeAt(0) % boxes.length];
       if (m.step === 1) {
         await enqueue({ workspaceId: ws.id, leadId: l.id, touchId: m.id, mailboxId: box.id, to: m.to!, subject: m.subject ?? "", body: m.body, at: sendSlot(ws) });
         n++;
@@ -250,6 +261,15 @@ async function planSends(ws: Workspace, s: AgentState) {
 }
 
 /* ---------- send ---------- */
+
+/** Bounce brake: after 20+ sends in 14 days, more than 3% bounces pauses the mailbox until you resume it. */
+async function checkBounces(box: StoredMailbox) {
+  const { sent, bounced } = await bounceStats(box.id, 14);
+  if (sent < 20 || bounced / sent <= 0.03) return null;
+  const reason = `${bounced} of ${sent} emails bounced in 14 days (${Math.round((100 * bounced) / sent)}%). Paused to protect your domain.`;
+  await pauseMailbox(box.id, reason);
+  return { reason };
+}
 
 async function runSender() {
   const due = await dueOutbox(15);
@@ -272,6 +292,16 @@ async function runSender() {
       await (await import("../db")).db().then((d) => d.exec(`update outbox set scheduled_at = ? where id = ?`, [sendSlot(ws, nextWindowStart(ws)).toISOString(), row.id]));
       continue;
     }
+    const t = await withCompany(workspaceDomain(ws), () => loadTeam());
+    const address = t.prefs?.postalAddress?.trim();
+    if (!address && !isReply) continue; // held until the postal address is set (Settings)
+    if (!isReply) {
+      const pause = (await mailboxPause(box.id)) ?? (await checkBounces(box));
+      if (pause) {
+        await (await import("../db")).db().then((d) => d.exec(`update outbox set scheduled_at = ? where id = ?`, [new Date(Date.now() + 6 * 3600e3).toISOString(), row.id]));
+        continue;
+      }
+    }
     if ((await sentTodayFrom(box.id)) >= effectiveDailyCap(box)) {
       await (await import("../db")).db().then((d) => d.exec(`update outbox set scheduled_at = ? where id = ?`, [sendSlot(ws, new Date(Date.now() + 18 * 3600e3)).toISOString(), row.id]));
       continue;
@@ -286,6 +316,7 @@ async function runSender() {
         inReplyTo: row.in_reply_to ?? undefined,
         references: row.in_reply_to ?? undefined,
         unsubscribeUrl: unsub,
+        address,
       });
       const r = await sendMail(box, msg);
       await markOut(row.id, { status: "sent", messageId: r.messageId });
