@@ -26,3 +26,32 @@ TEAM CREDITS (remaining), user card.
 `/api/mcp` had no login: anyone with the URL could pass `company: testerninja.com` and read leads or approve
 emails (which now really send). Now a company that belongs to a workspace is refused unless the call carries that
 workspace's key (`?key=dr_…` or `Authorization: Bearer dr_…`), and a key pins every call to its own company.
+
+## Paywalled screens, from their own tutorials (Nov 26, 2026)
+Sources: six YouTube transcripts (mM0L4vgCFsY, mblML4FA794, WrEz2AH7nCg, VumsPU_4n7g, 6TkGHiFueRI, D1fqg4yQ0ZE), G2 (29 reviews), Trustpilot (116).
+
+- **Agent wizard**: website → channel → connect accounts → goal + tone → ICP chips (titles, industries, locations,
+  company type, size bands) → exclusions (service providers, freelancers, open-to-work, keywords, competitors) →
+  starter signals (top 5% active, job change < 90 d, raised funds, hiring) → keywords → competitors → summary →
+  **preview 5 leads, mark fit / not fit** → launch.
+- **Agent tabs**: Overview, Leads (signal + flames + drawer with queued messages), Queue (next send countdown),
+  Review, Sources (ICP, x/15 signals, add lead source, Smart Lead Finder), Campaign, Activity ("scanned 100, 30
+  matched" per signal), Settings (limits, launch hour, days, review mode, language/goal/tone, senders).
+- **Campaign**: steps (invite, LinkedIn message, voice, visit, like, email) with delays; per step 3 modes: same text
+  for all, AI icebreaker, AI + your template; templates have channel, type (icebreaker / follow-up / closing),
+  variables, free-text AI instructions, and a preview on a real lead.
+- **Copilot**: Autopilot (actions in the next ~10 h, editable) and Review (approve / reject, "Refine with AI").
+- **Integrations**: HubSpot (on reply), Slack reply alerts, Pipedrive, Salesforce, Zoho CRM, Instantly, Lemlist,
+  HeyReach, Clay, webhook, Zapier, API, MCP. Mailboxes: Gmail and Outlook only (no Zoho).
+- **Users praise**: signal-based leads, review before sending, messages that cite the trigger, easy setup, support.
+- **Users complain**: surprise renewals and hard cancellation, leads off-ICP with no reason given, can't run a
+  campaign now, no lookalike search, no exclusions per signal, confusing UI at first.
+
+### Built from this (commit 12b8b27)
+Fit / not-fit learning (reject reasons are saved and fed to every picker), Refine with AI in Review, Preview 5
+leads in Sources, Activity "scanned N, picked M, skipped X because Y", dashboard pipeline value + replies + hot leads.
+
+### Still open
+Editable sequence builder and AI templates with preview; Copilot "next 10 hours" editable queue; Slack reply alerts,
+HubSpot push, webhook; several agents per workspace. Billing: when Stripe goes live, send a renewal reminder and
+make cancel one click (their most common complaint).
