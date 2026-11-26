@@ -30,6 +30,12 @@ export const MAILBOX_PRESETS: Record<string, { label: string; smtp: Endpoint; im
     imap: { host: "outlook.office365.com", port: 993, secure: true },
     help: "Your admin must allow SMTP AUTH for this mailbox. Use an app password if MFA is on.",
   },
+  resend: {
+    label: "Resend (your verified sending domain)",
+    smtp: { host: "api.resend.com", port: 443, secure: true },
+    imap: { host: "webhook", port: 443, secure: true },
+    help: "Resend → API keys: create a key with full access. Resend → Webhooks: add the endpoint shown below with the events email.received, email.bounced and email.complained, then copy its signing secret. Turn on Receiving for your domain so replies come back.",
+  },
   fastmail: {
     label: "Fastmail",
     smtp: { host: "smtp.fastmail.com", port: 465, secure: true },
@@ -45,7 +51,7 @@ function toBox(r: MailboxRow): StoredMailbox {
   return { ...(JSON.parse(r.data) as Mailbox), id: r.id, workspaceId: r.workspace_id, lastUid: Number(r.last_uid) || 0, status: r.status };
 }
 
-export async function addMailbox(workspaceId: string, input: { email: string; fromName: string; preset: string; user?: string; password: string; dailyCap?: number }): Promise<StoredMailbox> {
+export async function addMailbox(workspaceId: string, input: { email: string; fromName: string; preset: string; user?: string; password: string; dailyCap?: number; replyTo?: string; webhookSecret?: string }): Promise<StoredMailbox> {
   const p = MAILBOX_PRESETS[input.preset];
   if (!p) throw new Error("Pick your email provider.");
   const box: Mailbox = {
@@ -59,6 +65,9 @@ export async function addMailbox(workspaceId: string, input: { email: string; fr
     passSealed: seal(input.password),
     dailyCap: Math.max(5, Math.min(60, input.dailyCap ?? 30)),
     warmupStart: new Date().toISOString(),
+    ...(input.preset === "resend"
+      ? { provider: "resend" as const, replyTo: input.replyTo?.trim().toLowerCase() || undefined, webhookSecretSealed: input.webhookSecret?.trim() ? seal(input.webhookSecret.trim()) : undefined }
+      : {}),
   };
   await (await db()).exec(`insert into mailboxes (id, workspace_id, data, last_uid, status) values (?, ?, ?, 0, 'ok')`, [box.id, workspaceId, JSON.stringify(box)]);
   return { ...box, lastUid: 0, status: "ok" };
@@ -81,7 +90,7 @@ export async function setMailboxCursor(id: string, lastUid: number, status = "ok
 
 /** Public view: never return the sealed password. */
 export function publicBox(b: StoredMailbox) {
-  return { id: b.id, email: b.email, fromName: b.fromName, dailyCap: b.dailyCap, warmupStart: b.warmupStart, status: b.status, smtpHost: b.smtp.host };
+  return { id: b.id, email: b.email, fromName: b.fromName, dailyCap: b.dailyCap, warmupStart: b.warmupStart, status: b.status, smtpHost: b.smtp.host, provider: b.provider ?? "smtp", replyTo: b.replyTo, webhook: Boolean(b.webhookSecretSealed) };
 }
 
 /* ---------- outbox ---------- */

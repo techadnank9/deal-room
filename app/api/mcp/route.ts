@@ -15,7 +15,7 @@ const CORS = {
   "Access-Control-Allow-Headers": "content-type, accept, authorization, mcp-protocol-version, mcp-session-id",
 };
 const INSTRUCTIONS =
-  "Deal Room is an AI sales team: Maya finds buyers, Arjun writes outreach, Elena tracks the pipeline. Every tool takes `company`, the seller's own website. Usual order: start_company, find_buyers, draft_outreach, then show the drafts to the user and call review_outreach with their decision. Never approve a message the user has not approved. An approved email is sent from the user's own connected mailbox in their sending window; LinkedIn notes are sent by hand. With a workspace key, every tool works on that workspace's company.";
+  "Deal Room is an AI sales team: Maya finds buyers, Arjun writes outreach, Elena tracks the pipeline. Every tool takes `company`, the seller's own website. Usual order: start_company, find_buyers, draft_outreach, then show the drafts to the user and call review_outreach with their decision. Never approve a message the user has not approved. An approved email is sent from the user's own connected mailbox in their sending window; LinkedIn notes are sent by hand. With a workspace key (the private link from Deal Room → MCP), every tool works on that workspace's company, and the workspace tools also work: search_prospects / add_prospect, list_contacts / add_to_list, mark_fit, refine_email, get_inbox / send_reply, agent_status / control_agent, preview_leads. Never approve, send or switch to autopilot unless the user asked.";
 
 type Rpc = { jsonrpc?: string; id?: string | number | null; method?: string; params?: Record<string, unknown> };
 type Reply = { jsonrpc: "2.0"; id: string | number | null; result?: unknown; error?: { code: number; message: string } };

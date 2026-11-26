@@ -179,7 +179,9 @@ function isRamping(start?: string) {
 }
 
 function Mailboxes() {
-  const { data, error, reload } = usePoll<{ mailboxes: Mailbox[]; presets: Preset[] }>("/api/mailboxes", 0);
+  const { data, error, reload } = usePoll<{ mailboxes: Mailbox[]; presets: Preset[]; webhookUrl?: string }>("/api/mailboxes", 0);
+  const [replyTo, setReplyTo] = useState("");
+  const [secret, setSecret] = useState("");
   const [preset, setPreset] = useState("");
   const [email, setEmail] = useState("");
   const [fromName, setFromName] = useState("");
@@ -204,14 +206,16 @@ function Mailboxes() {
       const r = await fetch("/api/mailboxes", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, fromName, preset: chosen.id, password, dailyCap }),
+        body: JSON.stringify({ email, fromName, preset: chosen.id, password, dailyCap, replyTo, webhookSecret: secret }),
       });
       const j = (await r.json().catch(() => ({}))) as { error?: string; smtp?: string; imap?: string };
       if (!r.ok) {
         setFail({ error: j.error || `Request failed (${r.status})`, smtp: j.smtp, imap: j.imap });
         return;
       }
-      setOk(`Connected ${email}. Sending and reply checks both work.`);
+      setOk(chosen.id === "resend" ? `Connected ${email} through Resend. Replies, bounces and complaints come back through the webhook.` : `Connected ${email}. Sending and reply checks both work.`);
+      setSecret("");
+      setReplyTo("");
       setEmail("");
       setFromName("");
       setPassword("");
@@ -333,6 +337,15 @@ function Mailboxes() {
               ))}
             </ol>
           )}
+          {chosen?.id === "resend" && data?.webhookUrl && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted">Webhook endpoint:</span>
+              <code className="break-all rounded-lg bg-white px-2 py-1 text-xs">{data.webhookUrl}</code>
+              <button type="button" className="text-xs underline" onClick={() => void navigator.clipboard.writeText(data.webhookUrl!)}>
+                Copy
+              </button>
+            </div>
+          )}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -349,13 +362,31 @@ function Mailboxes() {
           </div>
           <div>
             <label htmlFor="mb-pass" className="mb-1 block text-sm font-medium">
-              App password
+              {chosen?.id === "resend" ? "Resend API key" : "App password"}
             </label>
             <input id="mb-pass" type="password" required autoComplete="new-password" aria-describedby="mb-pass-help" className={input} value={password} onChange={(e) => setPassword(e.target.value)} />
             <p id="mb-pass-help" className="mt-1 text-xs text-muted">
-              An app password, not your normal password.
+              {chosen?.id === "resend" ? "Starts with re_. Stored encrypted." : "An app password, not your normal password."}
             </p>
           </div>
+          {chosen?.id === "resend" && (
+            <>
+              <div>
+                <label htmlFor="mb-reply" className="mb-1 block text-sm font-medium">
+                  Replies go to
+                </label>
+                <input id="mb-reply" type="email" className={input} value={replyTo} onChange={(e) => setReplyTo(e.target.value)} placeholder="Leave empty to use the sending address" />
+                <p className="mt-1 text-xs text-muted">An address Resend receives for (your domain with Receiving on, or your …resend.app address).</p>
+              </div>
+              <div>
+                <label htmlFor="mb-secret" className="mb-1 block text-sm font-medium">
+                  Webhook signing secret
+                </label>
+                <input id="mb-secret" type="password" autoComplete="off" className={input} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="whsec_…" />
+                <p className="mt-1 text-xs text-muted">From the webhook you added in Resend. Needed to see replies and stop sequences.</p>
+              </div>
+            </>
+          )}
           <div>
             <label htmlFor="mb-cap" className="mb-1 block text-sm font-medium">
               Daily limit

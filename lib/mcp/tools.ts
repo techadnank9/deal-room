@@ -1,10 +1,13 @@
-import { ownerOfDomain, type Workspace } from "../workspace";
+import { ownerOfDomain, updateWorkspace, type Workspace } from "../workspace";
+import { addProspects, fileContacts, markFit, previewQuery, prospectSearch, refineTouch } from "../gtm/prospect";
+import { agentStatus, runNow } from "../agent/runner";
+import { enqueue, getInbound, listInbound, listMailboxes, listOutbox, markHandled } from "../agent/store";
 // Deal Room as an MCP connector: the same team (Maya, Arjun, Elena) and GTM engine the web app uses,
 // exposed as tools so the pipeline runs from inside Claude or ChatGPT.
 // Every tool names the seller's company; each company has its own room, exactly like the web app.
 
 import { bookMeeting, loadTeam, removeLead, resolveCompanyUrl, teamSetup, teamTurn, withCompany, type Lead, type TeamState } from "../agents/team";
-import { analytics, decideTouch, draftSequence, memorySearch, stageOf } from "../gtm/engine";
+import { analytics, decideTouch, draftSequence, memorySearch, onLeadsFound, stageOf } from "../gtm/engine";
 import { STAGES } from "../gtm/types";
 import { withModel } from "../llm";
 import { PRICES, usage } from "../sponsors/flexprice";
@@ -19,7 +22,7 @@ export type Tool = {
   description: string;
   inputSchema: Schema;
   annotations: { readOnlyHint: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint: boolean };
-  run: (a: Args) => Promise<Json>;
+  run: (a: Args, ctx: { ws: Workspace | null }) => Promise<Json>;
 };
 
 const COMPANY = { type: "string", description: "The seller's own company: website URL or domain, e.g. acme.com. This is the company doing the selling, never the buyer." };
@@ -264,7 +267,175 @@ export const TOOLS: Tool[] = [
       return { hits: r.hits.map((h) => ({ text: h.text, kind: h.metadata?.kind, lead: h.metadata?.leadId, source: h.metadata?.url || undefined })) };
     },
   },
+  /* ---------- workspace tools (need the workspace's MCP link) ---------- */
+  {
+    name: "search_prospects",
+    title: "Search for prospects",
+    description: "Describe who to find in plain words (e.g. 'founders who just launched an AI-built web app'). Searches the live web and returns companies with the signal, why they fit, and a source link. Nothing is saved; call add_prospect for the ones the user wants.",
+    inputSchema: schema({ company: COMPANY, query: { type: "string", description: "Who to find, in plain words." } }, ["company", "query"]),
+    annotations: { readOnlyHint: true, openWorldHint: true },
+    run: async (a) => {
+      const r = await prospectSearch(a.query ?? "");
+      return { filters: r.filters, searched: r.searched, results: r.results };
+    },
+  },
+  {
+    name: "add_prospect",
+    title: "Add a prospect to the agent",
+    description: "Adds one company (usually from search_prospects) to the pipeline. The agent then finds the right people, verifies emails and writes the outreach for review.",
+    inputSchema: schema(
+      {
+        company: COMPANY,
+        buyer: { type: "string", description: "The buyer company's name." },
+        domain: { type: "string", description: "The buyer's website domain, if known." },
+        signal: { type: "string", description: "The fact that makes them a fit right now." },
+        source_url: { type: "string", description: "Where the signal comes from." },
+        why: { type: "string", description: "One sentence: why they would buy now." },
+      },
+      ["company", "buyer"],
+    ),
+    annotations: { readOnlyHint: false, openWorldHint: true },
+    run: async (a) => {
+      const added = await addProspects([{ company: a.buyer!, domain: a.domain ?? "", signal: a.signal ?? a.why ?? "", why: a.why ?? a.signal ?? "", sourceUrl: a.source_url ?? "", sourceTitle: "", kind: "other", known: false }]);
+      if (added.length) void onLeadsFound(added);
+      return added.length ? { added: brief(added[0]), next: "The agent is researching people and emails; drafts appear in review shortly." } : { added: null, note: "Already in the pipeline, or no website could be found for it." };
+    },
+  },
+  {
+    name: "list_contacts",
+    title: "List contacts",
+    description: "Everyone the agent found at its companies: name, title, persona, email and email status, list, and where they stand.",
+    inputSchema: schema({ company: COMPANY, list: { type: "string", description: "Only people in this list." }, persona: { type: "string", description: "Only people matching this persona." } }, ["company"]),
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    run: async (a) => {
+      const t = await loadTeam();
+      const rows = t.leads.flatMap((l) => (l.contacts ?? []).map((c) => ({ lead_id: l.id, contact_id: c.id, name: c.name, title: c.title, persona: c.persona, buyer: l.company, email: c.email, email_status: c.emailStatus, list: c.list, stage: stageOf(l), fit: l.feedback?.fit })));
+      return { contacts: rows.filter((r) => (!a.list || r.list === a.list) && (!a.persona || r.persona === a.persona)).slice(0, 200), lists: t.lists ?? [] };
+    },
+  },
+  {
+    name: "add_to_list",
+    title: "Add a contact to a list",
+    description: "Files one contact under a named list (created if new). Use list_contacts for the ids.",
+    inputSchema: schema({ company: COMPANY, lead_id: { type: "string" }, contact_id: { type: "string" }, list: { type: "string", description: "List name; empty takes them off their list." } }, ["company", "lead_id", "contact_id", "list"]),
+    annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+    run: async (a) => {
+      await fileContacts([{ leadId: a.lead_id!, contactId: a.contact_id! }], a.list ?? "");
+      return { ok: true, list: a.list };
+    },
+  },
+  {
+    name: "mark_fit",
+    title: "Mark a lead good fit or not",
+    description: "Teaches the agent: 'good' finds more like this, 'bad' (with a reason) avoids companies like it. Only record what the user said.",
+    inputSchema: schema({ company: COMPANY, lead: LEAD, fit: { type: "string", enum: ["good", "bad"] }, reason: { type: "string", description: "Why it is not a fit (bad only)." } }, ["company", "lead", "fit"]),
+    annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+    run: async (a) => {
+      const l = findLead(await loadTeam(), a.lead);
+      await markFit(l.id, a.fit === "good" ? "good" : "bad", a.reason);
+      return { lead: l.company, fit: a.fit };
+    },
+  },
+  {
+    name: "refine_email",
+    title: "Rewrite a drafted email",
+    description: "Rewrites one pending email to an instruction ('shorter', 'softer ask'), keeping every fact, and saves it as an edit (still pending until approved).",
+    inputSchema: schema({ company: COMPANY, lead: LEAD, touch_id: { type: "string" }, instruction: { type: "string" } }, ["company", "lead", "touch_id", "instruction"]),
+    annotations: { readOnlyHint: false, openWorldHint: false },
+    run: async (a) => {
+      const l = findLead(await loadTeam(), a.lead);
+      const d = await refineTouch(l.id, a.touch_id!, a.instruction ?? "");
+      await decideTouch(l.id, a.touch_id!, "edit", { subject: d.subject || undefined, body: d.body });
+      return { lead: l.company, touch_id: a.touch_id, subject: d.subject, body: d.body };
+    },
+  },
+  {
+    name: "get_inbox",
+    title: "Read replies",
+    description: "Replies from prospects, newest first, each with its category (interested, not now, unsubscribe…) and the drafted answer.",
+    inputSchema: schema({ company: COMPANY, only_open: { type: "string", enum: ["yes", "no"], description: "yes = only replies not handled yet (default)." } }, ["company"]),
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    run: async (a, { ws }) => {
+      const w = need(ws);
+      const rows = await listInbound(w.id, 100);
+      return {
+        replies: rows
+          .filter((r) => a.only_open === "no" || !r.handled)
+          .map((r) => ({ reply_id: r.id, from: r.from_email, subject: r.subject, category: r.category, text: r.clean ?? r.text?.slice(0, 1500), drafted_answer: r.draft, received: r.received_at, handled: Boolean(r.handled) })),
+      };
+    },
+  },
+  {
+    name: "send_reply",
+    title: "Answer a reply",
+    description: "Sends an answer to a prospect who wrote back, from the connected mailbox, in the same thread, right away. Only send what the user approved.",
+    inputSchema: schema({ company: COMPANY, reply_id: { type: "string" }, body: { type: "string", description: "The answer. Empty uses the drafted answer." } }, ["company", "reply_id"]),
+    annotations: { readOnlyHint: false, openWorldHint: true },
+    run: async (a, { ws }) => {
+      const w = need(ws);
+      const r = await getInbound(w.id, a.reply_id!);
+      if (!r || !r.from_email) throw new ToolError("No reply with that id.");
+      const boxes = await listMailboxes(w.id);
+      const box = boxes.find((x) => x.id === r.mailbox_id) ?? boxes[0];
+      if (!box) throw new ToolError("No mailbox is connected. Connect one in Deal Room → Settings.");
+      const body = (a.body ?? "").trim() || r.draft || "";
+      if (!body) throw new ToolError("Nothing to send: give a body.");
+      await enqueue({ workspaceId: w.id, leadId: r.lead_id ?? "", touchId: `reply-${r.id}`, mailboxId: box.id, to: r.from_email, subject: r.subject?.startsWith("Re:") ? r.subject : `Re: ${r.subject ?? ""}`, body, inReplyTo: r.message_id ?? undefined, at: new Date(Date.now() + 30e3) });
+      await markHandled(w.id, r.id);
+      return { sent_to: r.from_email, within: "a minute" };
+    },
+  },
+  {
+    name: "agent_status",
+    title: "Agent status",
+    description: "Whether the agent is running, autopilot or review mode, schedule, today's usage, the next sending window, recent log lines and the send queue.",
+    inputSchema: schema({ company: COMPANY }, ["company"]),
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    run: async (_a, { ws }) => {
+      const w = need(ws);
+      const [status, outbox, boxes] = await Promise.all([agentStatus(w), listOutbox(w.id, 30), listMailboxes(w.id)]);
+      return {
+        running: w.settings.active,
+        mode: w.settings.autopilot ? "autopilot (approved automatically)" : "review (waits for approval)",
+        schedule: { timezone: w.settings.timezone, start_hour: w.settings.launchHour, days: w.settings.days, new_leads_per_day: w.settings.dailyLeadTarget },
+        mailboxes: boxes.map((b) => ({ email: b.email, provider: b.provider ?? "smtp", daily_cap: b.dailyCap })),
+        status,
+        queue: outbox.map((o) => ({ to: o.to_email, subject: o.subject, status: o.status, at: o.scheduled_at, error: o.error })),
+      };
+    },
+  },
+  {
+    name: "control_agent",
+    title: "Start, pause or switch mode",
+    description: "start / pause the agent, run_now (search for new leads now), autopilot_on (send approved-by-agent emails without review) or autopilot_off (every email waits for review). Only on the user's request.",
+    inputSchema: schema({ company: COMPANY, action: { type: "string", enum: ["start", "pause", "run_now", "autopilot_on", "autopilot_off"] } }, ["company", "action"]),
+    annotations: { readOnlyHint: false, openWorldHint: true },
+    run: async (a, { ws }) => {
+      const w = need(ws);
+      if (a.action === "run_now") return { found: await runNow(w) };
+      const patch = a.action === "start" ? { active: true } : a.action === "pause" ? { active: false } : { autopilot: a.action === "autopilot_on" };
+      const after = await updateWorkspace(w.id, { settings: patch });
+      return { running: after?.settings.active, autopilot: after?.settings.autopilot };
+    },
+  },
+  {
+    name: "preview_leads",
+    title: "Preview leads for the current targeting",
+    description: "Five companies the current targeting finds right now, each with signal and source. Use with mark_fit / add_prospect to tune targeting.",
+    inputSchema: schema({ company: COMPANY }, ["company"]),
+    annotations: { readOnlyHint: true, openWorldHint: true },
+    run: async () => {
+      const r = await prospectSearch(previewQuery(await loadTeam()));
+      return { results: r.results.filter((x) => !x.known).slice(0, 5) };
+    },
+  },
 ];
+
+function need(ws: Workspace | null): Workspace {
+  if (!ws) throw new ToolError("This tool needs your workspace's private MCP link (Deal Room → MCP).");
+  return ws;
+}
+
 
 /** Run one tool inside the seller's own room. A bare company name is looked up first, as on the web app. */
 /** ws = the workspace the caller's key belongs to (null without a key). A key pins every call to its own company;
@@ -278,5 +449,5 @@ export async function callTool(name: string, args: Args, ws: Workspace | null = 
   const company = await resolveCompanyUrl(args.company!);
   const owner = await ownerOfDomain(company);
   if (owner && owner !== ws?.id) throw new ToolError("This company has a Deal Room workspace. Connect with that workspace's own MCP link (Deal Room → MCP) to work on it.");
-  return withCompany(company, () => withModel(undefined, () => tool.run({ ...args, company })));
+  return withCompany(company, () => withModel(undefined, () => tool.run({ ...args, company }, { ws })));
 }

@@ -4,6 +4,7 @@ import type SMTPTransport from "nodemailer/lib/smtp-transport";
 import { ImapFlow } from "imapflow";
 import { open } from "./crypto";
 import type { Mailbox, OutboundMessage, SendResult, VerifyResult } from "./types";
+import { sendViaResend, verifyResend } from "./resend";
 
 const TIMEOUT_MS = 20_000;
 
@@ -27,6 +28,7 @@ function addr(a: string | Mail.Address): string {
 }
 
 export async function sendMail(box: Mailbox, msg: OutboundMessage): Promise<SendResult> {
+  if (box.provider === "resend") return sendViaResend(box, msg);
   const transporter = transportFor(box);
   try {
     // Always send as the authenticated mailbox (providers reject or rewrite other senders).
@@ -78,6 +80,7 @@ async function verifyImap(box: Mailbox): Promise<string> {
 
 /** Checks SMTP auth (transporter.verify) and an IMAP login+logout. Never throws. */
 export async function verifyMailbox(box: Mailbox): Promise<VerifyResult> {
+  if (box.provider === "resend") return verifyResend(box);
   const [s, i] = await Promise.allSettled([verifySmtp(box), verifyImap(box)]);
   const smtp = s.status === "fulfilled" ? s.value : errText(s.reason);
   const imap = i.status === "fulfilled" ? i.value : errText(i.reason);

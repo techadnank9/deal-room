@@ -10,6 +10,7 @@ import { arr, enm, llmJSON, obj, str } from "../llm";
 import { loadTeam, saveTeam, teamTurn, withCompany, resolveCompanyUrl, type Lead } from "../agents/team";
 import { decideTouch, draftSequence, enrichLead, markReplied, markTouchSent, onLeadsFound } from "../gtm/engine";
 import { buildMessage, cleanReply, effectiveDailyCap, fetchNewMessages, isAutoReply, isBounce, makeUnsubToken, matchThread, normalizeMessageId, sendMail } from "../mail";
+import type { Inbound } from "../mail/types";
 import { hiringSignal, newsSignals, recentFormD, type SignalHit } from "../signals";
 import { bumpUsage, getWorkspace, listActiveWorkspaces, PLANS, usageThisMonth, usageToday, workspaceDomain, type Workspace } from "../workspace";
 import { clearsPrecision, fitExamples, passesKeywords, sendable, targetingRules } from "../gtm/targeting";
@@ -343,6 +344,7 @@ async function classify(text: string, from: string, t: Awaited<ReturnType<typeof
 }
 
 async function runInbox(ws: Workspace, box: StoredMailbox) {
+  if (box.provider === "resend") return; // replies arrive by webhook (app/api/inbound/resend)
   let res;
   try {
     res = await fetchNewMessages(box, box.lastUid || undefined);
@@ -351,29 +353,34 @@ async function runInbox(ws: Workspace, box: StoredMailbox) {
     console.error("[agent] inbox", box.email, err instanceof Error ? err.message : err);
     return;
   }
+  for (const m of res.messages) await handleInbound(ws, box, m);
+  await setMailboxCursor(box.id, res.lastUid, "ok");
+}
+
+/** One incoming message: match it to our outreach, classify it, draft an answer, stop the sequence. */
+export async function handleInbound(ws: Workspace, box: StoredMailbox, m: Inbound, forced?: "bounce" | "unsubscribe") {
+  if (m.from === box.email) return;
   const sent = await sentMessages(ws.id);
   const ids = new Set(sent.map((x) => x.message_id && normalizeMessageId(x.message_id)).filter(Boolean) as string[]);
-  const t = await loadTeam();
-  const rep = (t.rep ?? box.fromName).split(" ")[0];
-  for (const m of res.messages) {
-    if (m.from === box.email) continue;
-    const hit = matchThread(m, ids);
-    const out = hit ? sent.find((x) => x.message_id && normalizeMessageId(x.message_id) === hit) : sent.find((x) => x.to_email === m.from);
-    if (!out) continue; // not a reply to our outreach: leave the user's normal mail alone
-    const bounce = isBounce(m);
-    const auto = !bounce && isAutoReply(m);
+  const hit = matchThread(m, ids);
+  const out = hit ? sent.find((x) => x.message_id && normalizeMessageId(x.message_id) === hit) : sent.find((x) => x.to_email === m.from);
+  if (!out) return; // not a reply to our outreach: leave the user's normal mail alone
+  await withCompany(workspaceDomain(ws), async () => {
+    const t = await loadTeam();
+    const rep = (t.rep ?? box.fromName).split(" ")[0];
+    const bounce = forced === "bounce" || (!forced && isBounce(m));
+    const auto = !bounce && !forced && isAutoReply(m);
     const clean = cleanReply(m.text);
-    let category = bounce ? "bounce" : auto ? "out_of_office" : "other";
+    let category: string = forced ?? (bounce ? "bounce" : auto ? "out_of_office" : "other");
     let draft = "";
-    if (!bounce && !auto) ({ category, draft } = await classify(clean, m.from, t, rep));
+    if (!forced && !bounce && !auto) ({ category, draft } = await classify(clean, m.from, t, rep));
     await saveInbound({ workspace_id: ws.id, mailbox_id: box.id, message_id: m.messageId, in_reply_to: m.inReplyTo ?? null, from_email: m.from, subject: m.subject, text: m.text.slice(0, 20000), clean, category, lead_id: out.lead_id, draft: draft || null, received_at: m.date });
     if (category === "unsubscribe" || category === "bounce") await suppress(ws.id, bounce ? out.to_email : m.from, category);
     if (out.lead_id && category !== "out_of_office") {
       await cancelLeadOutbox(ws.id, out.lead_id);
       await markReplied(out.lead_id, category === "bounce" ? "not_interested" : category, clean || m.subject);
     }
-  }
-  await setMailboxCursor(box.id, res.lastUid, "ok");
+  });
 }
 
 /* ---------- tick ---------- */

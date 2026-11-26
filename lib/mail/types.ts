@@ -14,6 +14,12 @@ export type Mailbox = {
   dailyCap: number;
   /** ISO date; cap ramps from 10 to dailyCap over 14 days */
   warmupStart?: string;
+  /** "smtp" (default: SMTP + IMAP with an app password) or "resend" (API key; replies arrive by webhook). */
+  provider?: "smtp" | "resend";
+  /** Where replies go (Resend). Defaults to the sending address. */
+  replyTo?: string;
+  /** Resend webhook signing secret, sealed. */
+  webhookSecretSealed?: string;
 };
 
 export type Inbound = {
