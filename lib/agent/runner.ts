@@ -64,13 +64,14 @@ function sendSlot(ws: Workspace, notBefore = new Date()) {
 
 /* ---------- find: one signal per run ---------- */
 
-const SOURCES = ["web", "hiring", "funding", "news"] as const;
+const SOURCES = ["web", "launches", "hiring", "funding", "news"] as const;
 type Source = (typeof SOURCES)[number];
 
 function enabledSources(ws: Workspace): Source[] {
   const s = ws.settings.signals;
   const on: Source[] = [];
-  if (s.web || s.launches || s.competitors) on.push("web");
+  if (s.launches) on.push("launches");
+  if (s.web || s.competitors) on.push("web");
   if (s.hiring) on.push("hiring");
   if (s.funding) on.push("funding", "news");
   return on.length ? on : ["web"];
@@ -143,6 +144,16 @@ async function runSource(ws: Workspace, s: AgentState): Promise<number> {
       }
       await saveTeam(after);
     }
+  } else if (src === "launches") {
+    // New products just launched: Product Hunt, Show HN, Launch YC, and sites built with AI app builders.
+    const { searchWeb } = await import("../sponsors/telem");
+    const icp = t.icpSpec?.summary ?? t.icp ?? "";
+    const qs = [`"Show HN" new web app launch this week`, `Product Hunt launch today new SaaS web app`, `"built with Lovable" OR "made with Bolt" OR "built on Replit" new app launch`, `Launch YC new startup launch web app`];
+    const q = qs[s.rotation % qs.length];
+    const r = await searchWeb(q).catch(() => ({ sources: [] as { title: string; url: string; snippet: string }[] }));
+    const hits: SignalHit[] = r.sources.slice(0, 12).map((x) => ({ company: x.title.split(/[-–|:]/)[0].replace(/^Show HN:?/i, "").trim().slice(0, 60), kind: "launch", text: `Launched recently: ${x.title}`.slice(0, 200), sourceUrl: x.url, at: new Date().toISOString(), strength: 0.7 }));
+    found = await leadsFromHits(hits, `launches (${icp ? "ICP" : "web"})`);
+    if (found.length) void onLeadsFound(found);
   } else if (src === "funding") {
     const hits = await recentFormD({ days: 4, limit: 25, industries: ["Other Technology", "Computers", "Telecommunications", "Business Services", "Other Health Care", "Biotechnology", "Manufacturing"] }).catch(() => []);
     found = await leadsFromHits(hits, "SEC Form D");
@@ -155,7 +166,7 @@ async function runSource(ws: Workspace, s: AgentState): Promise<number> {
   }
   if (found.length) await bumpUsage(ws.id, "leads", found.length);
   await bumpUsage(ws.id, "runs");
-  note(s, `Searched ${src === "web" ? "the web for buying signals" : src === "hiring" ? "job boards for hiring surges" : src === "funding" ? "SEC Form D filings for new funding" : "funding and launch news"}: ${found.length} new lead${found.length === 1 ? "" : "s"}${found.length ? ` (${found.map((l) => l.company).join(", ")})` : ""}`);
+  note(s, `Searched ${src === "launches" ? "new product launches (Product Hunt, Show HN, Launch YC, AI-built apps)" : src === "web" ? "the web for buying signals" : src === "hiring" ? "job boards for hiring surges" : src === "funding" ? "SEC Form D filings for new funding" : "funding and launch news"}: ${found.length} new lead${found.length === 1 ? "" : "s"}${found.length ? ` (${found.map((l) => l.company).join(", ")})` : ""}`);
   return found.length;
 }
 

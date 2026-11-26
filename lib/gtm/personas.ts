@@ -132,16 +132,46 @@ function expandTitle(t: string) {
     .replace(/\s+/g, " ");
 }
 
-export function matchPersona(title: string, personas: Persona[]): Persona | null {
+/** Employee range a persona targets, from text like "5-50 employees" or "100-2,000". */
+function sizeRange(text: string): [number, number] | null {
+  const m = text.replace(/,/g, "").match(/(\d+)\s*[-–to]+\s*(\d+)/);
+  return m ? [Number(m[1]), Number(m[2])] : null;
+}
+function headcount(size?: string): number | null {
+  if (!size) return null;
+  const nums = (size.replace(/,/g, "").match(/\d+/g) ?? []).map(Number);
+  if (!nums.length) return null;
+  return nums.length > 1 ? Math.round((nums[0] + nums[1]) / 2) : nums[0];
+}
+
+/**
+ * Which persona a job title matches. Scores by how many distinctive title words match (so "Co-Founder & CTO"
+ * prefers the CTO persona over a plain "Founder" one), and, when the company size is known, prefers the persona
+ * whose company-size range fits.
+ */
+export function matchPersona(title: string, personas: Persona[], companySize?: string, companyText?: string): Persona | null {
   const tl = expandTitle(title);
+  const n = headcount(companySize);
+  const isAgency = /agency|studio|development services|dev shop|consultanc|software house|app builders?|outsourc/i.test(companyText ?? "");
   let best: { p: Persona; s: number } | null = null;
   for (const p of personas.filter((x) => x.enabled)) {
     if (p.excludeTitles.some((x) => x && tl.includes(expandTitle(x).trim()))) continue;
+    // Agency personas only fit companies that are agencies or studios.
+    if (/agency|studio/i.test(p.label) && !isAgency) continue;
+    const range = sizeRange(p.companySize);
+    // Far outside the persona's company size: not this persona (a CEO of 80 people is not a solo founder).
+    if (n !== null && range && (n > range[1] * 3 || n < range[0] * 0.3)) continue;
+    let top = 0;
     for (const want of p.titles) {
       const words = expandTitle(want).split(/[^a-z]+/).filter((w) => w.length > 2 && !["and", "the", "for", "head"].includes(w));
-      const hit = words.filter((w) => tl.includes(w)).length / Math.max(1, words.length);
-      if (hit > (best?.s ?? 0.49)) best = { p, s: hit };
+      if (!words.length) continue;
+      const hit = words.filter((w) => tl.includes(w)).length;
+      if (hit / words.length < 0.5) continue;
+      top = Math.max(top, hit + hit / words.length);
     }
+    if (!top) continue;
+    if (n !== null && range) top += n >= range[0] * 0.7 && n <= range[1] * 1.3 ? 2 : -2;
+    if (top > (best?.s ?? 0)) best = { p, s: top };
   }
   return best?.p ?? null;
 }

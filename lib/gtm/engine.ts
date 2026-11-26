@@ -196,7 +196,7 @@ export async function enrichLead(leadId: string, actor: Actor = "agent"): Promis
   log(t, { actor: "agent", who: "Maya", kind: "search", text: `${l.company}: Glasser returned ${people.length} decision-makers; resolved ${resolved.filter((r) => r?.fullName).length} full names from public profiles`, leadId });
   // Persona match first, then a verified email for the best 2 matches (find + verify through the provider waterfall).
   const personas = t.personas ?? [];
-  for (const c of contacts) c.persona = matchPersona(c.title, personas)?.label;
+  for (const c of contacts) c.persona = matchPersona(c.title, personas, l.size ?? e?.data.employees, `${l.company} ${l.why} ${e?.data.industry ?? ""} ${e?.data.description ?? ""}`)?.label;
   contacts.sort((a, b) => Number(!!b.persona) - Number(!!a.persona));
   for (const c of contacts.filter((x) => x.name.includes(" ")).slice(0, 2)) {
     const found = await findEmail(c.name, l.domain);
@@ -332,7 +332,7 @@ export async function draftSequence(leadId: string, opts: { enrich?: boolean } =
   const { data } = await llmJSON<{ email1: { subject: string; body: string }; linkedin: { body: string }; email2: { subject: string; body: string } }>({
     label: "gtm-sequence",
     maxTokens: 1500,
-    system: `You are Arjun, outbound writer. Write a 3-touch sequence from a rep at ${t.company ?? "our company"} to ${who ? `${who.name} (${who.title})` : `the ${persona?.title ?? "buyer"}`} at ${l.company}. Weave in ONE specific trigger signal from the facts (name it concretely) and tie it to our value. Persona tone: ${persona?.seniority === "C-level" ? "brief, outcome and money first, max 70 words" : "practical, specific, max 100 words"}. ${buyer ? `This person is a "${buyer.label}". Their pains: ${buyer.pains.join("; ")}. Lead with: ${buyer.angle}. ` : ""}CTA: ${cmp.cta.trim() || buyer?.cta || (cmp.goal === "demo" ? "booking a short demo" : cmp.goal === "reply" ? "a one-line reply" : variant === "A" ? "a 15-minute call this week" : "permission to send a 2-minute teardown video")}. Tone: ${cmp.tone}. Write in ${cmp.language}. email1 = first touch. linkedin = connection note under 280 characters. email2 = follow-up ${cmp.followUpDays} days later, new angle, under 70 words.${t.knowledge ? ` What we know about our own product (use it, don't invent other claims): value: ${t.knowledge.valueProp}; pains we solve: ${t.knowledge.pains}; features: ${t.knowledge.features}; proof: ${t.knowledge.proof}.` : ""} Sign every email and note as ${t.rep ?? "the team"} from ${t.company ?? "our company"} (the rep sends it, not you). Never use placeholders like [Name]; use the real names given or a role. No hype words.`,
+    system: `You are Arjun, outbound writer. Write a 3-touch sequence from a rep at ${t.company ?? "our company"} to ${who ? `${who.name} (${who.title})` : `the ${persona?.title ?? "buyer"}`} at ${l.company}. Weave in ONE specific trigger signal from the facts (name it concretely) and tie it to our value. Persona tone: ${persona?.seniority === "C-level" ? "brief, outcome and money first, max 70 words" : "practical, specific, max 100 words"}. ${buyer ? `This person is a "${buyer.label}". Their pains: ${buyer.pains.join("; ")}. The theme to lead with (say it in your own natural words, never copy this sentence): ${buyer.angle} ` : ""}CTA: ${cmp.cta.trim() || buyer?.cta || (cmp.goal === "demo" ? "booking a short demo" : cmp.goal === "reply" ? "a one-line reply" : variant === "A" ? "a 15-minute call this week" : "permission to send a 2-minute teardown video")}. Tone: ${cmp.tone}. Write in ${cmp.language}. email1 = first touch. linkedin = connection note under 280 characters. email2 = follow-up ${cmp.followUpDays} days later, new angle, under 70 words.${t.knowledge ? ` What we know about our own product (use it, don't invent other claims): value: ${t.knowledge.valueProp}; pains we solve: ${t.knowledge.pains}; features: ${t.knowledge.features}; proof: ${t.knowledge.proof}.` : ""} Sign every email and note as ${t.rep ?? "the team"} from ${t.company ?? "our company"} (the rep sends it, not you). Never use placeholders like [Name]; use the real names given or a role. No hype words.`,
     user: `We sell: ${t.offering}\nICP: ${t.icp ?? ""}\nProspect: ${l.company} (${l.domain}), ${l.industry ?? ""}, ${l.size ?? "?"} employees, funding ${l.funding ?? "?"}\nFacts:\n${facts.map((f) => `- ${f}`).join("\n") || l.why}`,
     schema: obj({ email1: obj({ subject: str(), body: str() }), linkedin: obj({ body: str() }), email2: obj({ subject: str(), body: str() }) }),
     mock: () => ({
@@ -659,7 +659,7 @@ export async function importLeads(rows: { company?: string; domain?: string; nam
       history: [{ at: new Date().toISOString(), stage: "matched", actor: "rep", who: "You", note: "imported" }],
     };
     if (r.name && r.email) {
-      lead.contacts = [{ id: `${lead.id}-u0`, name: r.name, title: r.title ?? "", email: r.email.toLowerCase(), emailStatus: "unknown", source: "inferred", confidence: 0.8, persona: matchPersona(r.title ?? "", t.personas ?? [])?.label }];
+      lead.contacts = [{ id: `${lead.id}-u0`, name: r.name, title: r.title ?? "", email: r.email.toLowerCase(), emailStatus: "unknown", source: "inferred", confidence: 0.8, persona: matchPersona(r.title ?? "", t.personas ?? [], undefined)?.label }];
     }
     added.push(lead);
   }
