@@ -558,6 +558,8 @@ export function Footer() {
             <li><a href="#faq" className="hover:text-ink">FAQ</a></li>
             <li><Link href="/team" className="hover:text-ink">Live demo</Link></li>
             <li><Link href="/app" className="hover:text-ink">Log in</Link></li>
+            <li><Link href="/privacy" className="hover:text-ink">Privacy</Link></li>
+            <li><Link href="/terms" className="hover:text-ink">Terms</Link></li>
           </ul>
         </nav>
       </div>

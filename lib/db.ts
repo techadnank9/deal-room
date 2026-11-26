@@ -45,6 +45,8 @@ create index if not exists outbox_due on outbox (status, scheduled_at);
 create table if not exists inbound (id text primary key, workspace_id text not null, mailbox_id text, message_id text, in_reply_to text, from_email text, subject text, text text, clean text, category text, lead_id text, draft text, received_at text, handled integer not null default 0);
 create table if not exists suppression (workspace_id text not null, email text not null, reason text, at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')), primary key (workspace_id, email));
 create table if not exists usage_daily (workspace_id text not null, day text not null, leads int not null default 0, enrich int not null default 0, sends int not null default 0, runs int not null default 0, primary key (workspace_id, day));
+create table if not exists traces (id text primary key, domain text not null, run_id text, kind text not null, label text not null, ms integer not null default 0, ok integer not null default 1, input text, output text, error text, at text not null);
+create index if not exists traces_domain_at on traces (domain, at);
 `;
 
 const PG_SCHEMA = `
@@ -71,6 +73,8 @@ create index if not exists outbox_due on outbox (status, scheduled_at);
 create table if not exists inbound (id text primary key, workspace_id text not null, mailbox_id text, message_id text, in_reply_to text, from_email text, subject text, text text, clean text, category text, lead_id text, draft text, received_at timestamptz, handled boolean not null default false);
 create table if not exists suppression (workspace_id text not null, email text not null, reason text, at timestamptz not null default now(), primary key (workspace_id, email));
 create table if not exists usage_daily (workspace_id text not null, day text not null, leads int not null default 0, enrich int not null default 0, sends int not null default 0, runs int not null default 0, primary key (workspace_id, day));
+create table if not exists traces (id text primary key, domain text not null, run_id text, kind text not null, label text not null, ms integer not null default 0, ok boolean not null default true, input text, output text, error text, at timestamptz not null);
+create index if not exists traces_domain_at on traces (domain, at);
 `;
 
 export const SQLITE_PATH = process.env.SQLITE_PATH || path.join(process.cwd(), "data", "dealroom.db");

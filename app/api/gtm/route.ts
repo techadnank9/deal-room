@@ -72,6 +72,7 @@ export async function POST(req: Request) {
         case "competitors":
           return Response.json({ state: await mapCompetitors() });
         case "enrich":
+          if (scope.workspace) await (await import("@/lib/workspace")).bumpUsage(scope.workspace.id, "enrich");
           return Response.json({ state: await enrichLead(b.leadId!, "rep") });
         case "draft":
           return Response.json({ state: await draftSequence(b.leadId!) });

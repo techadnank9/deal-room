@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { recordTrace } from "./trace";
 
 type Schema = Record<string, unknown>;
 
@@ -88,10 +89,16 @@ export async function llmJSON<T>(opts: {
   const model = currentModel();
   const p = provider(model);
   if (!p) return { data: opts.mock(), source: "mock" };
+  const t0 = Date.now();
+  const label = `${opts.label ?? "llm"} · ${model}`;
+  const trace = (data: unknown, error?: string) =>
+    void recordTrace({ kind: "llm", label, ms: Date.now() - t0, ok: !error, input: { system: opts.system.slice(0, 1500), user: opts.user.slice(0, 2500) }, output: data, error });
   try {
     if (p === "openai") {
       const text = await openaiJSON(model, opts.system, opts.user, opts.schema, opts.maxTokens ?? 4000);
-      return { data: JSON.parse(text) as T, source: "llm" };
+      const data = JSON.parse(text) as T;
+      trace(data);
+      return { data, source: "llm" };
     }
     const res = await getClient().messages.create({
       model,
@@ -105,8 +112,11 @@ export async function llmJSON<T>(opts: {
     });
     if (res.stop_reason === "refusal") throw new Error("refusal");
     const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("");
-    return { data: JSON.parse(text) as T, source: "llm" };
+    const data = JSON.parse(text) as T;
+    trace(data);
+    return { data, source: "llm" };
   } catch (err) {
+    trace(null, err instanceof Error ? err.message : String(err));
     console.error(`[llm] ${opts.label ?? "call"} failed, using mock:`, err instanceof Error ? err.message : err);
     return { data: opts.mock(), source: "mock" };
   }

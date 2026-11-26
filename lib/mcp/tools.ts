@@ -10,6 +10,7 @@ import { bookMeeting, loadTeam, removeLead, resolveCompanyUrl, teamSetup, teamTu
 import { analytics, decideTouch, draftSequence, memorySearch, onLeadsFound, stageOf } from "../gtm/engine";
 import { STAGES } from "../gtm/types";
 import { withModel } from "../llm";
+import { recordTrace, withRun } from "../trace";
 import { PRICES, usage } from "../sponsors/flexprice";
 
 type Json = Record<string, unknown>;
@@ -449,5 +450,17 @@ export async function callTool(name: string, args: Args, ws: Workspace | null = 
   const company = await resolveCompanyUrl(args.company!);
   const owner = await ownerOfDomain(company);
   if (owner && owner !== ws?.id) throw new ToolError("This company has a Deal Room workspace. Connect with that workspace's own MCP link (Deal Room → MCP) to work on it.");
-  return withCompany(company, () => withModel(undefined, () => tool.run({ ...args, company }, { ws })));
+  return withCompany(company, () =>
+    withModel(undefined, () => withRun(`MCP: ${name}`, async () => {
+      const t0 = Date.now();
+      try {
+        const out = await tool.run({ ...args, company }, { ws });
+        await recordTrace({ kind: "tool", label: name, ms: Date.now() - t0, input: args, output: out });
+        return out;
+      } catch (e) {
+        await recordTrace({ kind: "tool", label: name, ms: Date.now() - t0, ok: false, input: args, error: e instanceof Error ? e.message : String(e) });
+        throw e;
+      }
+    })),
+  );
 }

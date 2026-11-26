@@ -12,6 +12,8 @@ import { decideTouch, draftSequence, enrichLead, markReplied, markTouchSent, onL
 import { buildMessage, cleanReply, effectiveDailyCap, fetchNewMessages, isAutoReply, isBounce, makeUnsubToken, matchThread, normalizeMessageId, sendMail } from "../mail";
 import type { Inbound } from "../mail/types";
 import { hiringSignal, newsSignals, recentFormD, type SignalHit } from "../signals";
+import { searchWeb } from "../sponsors/telem";
+import { recordTrace, step, withRun } from "../trace";
 import { bumpUsage, getWorkspace, listActiveWorkspaces, PLANS, usageThisMonth, usageToday, workspaceDomain, type Workspace } from "../workspace";
 import { clearsPrecision, fitExamples, passesKeywords, sendable, targetingRules } from "../gtm/targeting";
 import { allMailboxes, bounceStats, cancelLeadOutbox, dueOutbox, enqueue, isSuppressed, listMailboxes, mailboxPause, markOut, pauseMailbox, saveInbound, sentMessages, sentTodayFrom, setMailboxCursor, suppress, type StoredMailbox } from "./store";
@@ -67,13 +69,13 @@ function sendSlot(ws: Workspace, notBefore = new Date()) {
 
 /* ---------- find: one signal per run ---------- */
 
-const SOURCES = ["web", "launches", "hiring", "funding", "news"] as const;
+const SOURCES = ["web", "launches", "builders", "hiring", "funding", "news"] as const;
 type Source = (typeof SOURCES)[number];
 
 function enabledSources(ws: Workspace): Source[] {
   const s = ws.settings.signals;
   const on: Source[] = [];
-  if (s.launches) on.push("launches");
+  if (s.launches) on.push("launches", "builders");
   if (s.web || s.competitors) on.push("web");
   if (s.hiring) on.push("hiring");
   if (s.funding) on.push("funding", "news");
@@ -174,6 +176,30 @@ async function runSource(ws: Workspace, s: AgentState): Promise<number> {
       });
     found = await leadsFromHits(hits, "Show HN launches");
     if (found.length) void onLeadsFound(found);
+  } else if (src === "builders") {
+    // Products just shipped with AI app builders (Lovable, Bolt, Replit, v0, Cursor): mostly solo founders and tiny teams.
+    const qs = [
+      "startup just launched app built with Lovable",
+      "founder launched SaaS built with Bolt.new this month",
+      "indie hacker launched web app made with Cursor 2026",
+      "small team launched product built on Replit 2026",
+      "made with v0 startup launch paying customers",
+      "solo founder vibe coded SaaS launch 2026",
+    ];
+    const pick = [qs[s.rotation % qs.length], qs[(s.rotation + 3) % qs.length]];
+    const hosted = /\.(lovable\.app|bolt\.host|replit\.app|vercel\.app|netlify\.app|v0\.dev|onrender\.com|framer\.website|webflow\.io)$/i;
+    const pages = (await Promise.all(pick.map((q) => searchWeb(q, 8).then((r) => r.sources).catch(() => [])))).flat();
+    const hits: SignalHit[] = pages.map((p) => {
+      let host = "";
+      try {
+        host = new URL(p.url).hostname.replace(/^www\./, "");
+      } catch {}
+      // An app on a builder's subdomain has no company domain yet: let the qualifier find the real site, or skip it.
+      const own = host && !hosted.test(host) && !/linkedin\.com|reddit\.com|x\.com|twitter\.com|medium\.com|youtube\.com|producthunt\.com|indiehackers\.com|lovable\.dev|replit\.com|bolt\.new|cursor\.com|vercel\.com/i.test(host);
+      return { company: p.title.split(/\s[|–—-]\s/)[0].slice(0, 60), domain: own ? host : "", kind: "launch" as const, text: `${p.title.slice(0, 120)}: ${p.snippet.slice(0, 200)}`, sourceUrl: p.url, at: new Date().toISOString(), strength: 0.7 };
+    });
+    found = await leadsFromHits(hits, "AI-built apps");
+    if (found.length) void onLeadsFound(found);
   } else if (src === "funding") {
     const hits = await recentFormD({ days: 4, limit: 25, industries: ["Other Technology", "Computers", "Telecommunications", "Business Services", "Other Health Care", "Biotechnology", "Manufacturing"] }).catch(() => []);
     found = await leadsFromHits(hits, "SEC Form D");
@@ -185,10 +211,11 @@ async function runSource(ws: Workspace, s: AgentState): Promise<number> {
     if (found.length) void onLeadsFound(found);
   }
   if (found.length) await bumpUsage(ws.id, "leads", found.length);
+  if (found.length && t.prefs?.autoEnrich !== false) await bumpUsage(ws.id, "enrich", Math.min(3, found.length)); // onLeadsFound researches the first 3
   await bumpUsage(ws.id, "runs");
   const scan = lastScan;
   lastScan = { scanned: 0, misses: [] };
-  note(s, `Searched ${src === "launches" ? "new product launches (Product Hunt, Show HN, Launch YC, AI-built apps)" : src === "web" ? "the web for buying signals" : src === "hiring" ? "job boards for hiring surges" : src === "funding" ? "SEC Form D filings for new funding" : "funding and launch news"}: ${found.length} new lead${found.length === 1 ? "" : "s"}${found.length ? ` (${found.map((l) => l.company).join(", ")})` : ""}${scan.scanned ? `. Scanned ${scan.scanned}, picked ${found.length}` : ""}${scan.misses.length ? `; skipped e.g. ${scan.misses.join(", ")}` : ""}`);
+  note(s, `Searched ${src === "launches" ? "new product launches (Product Hunt, Show HN, Launch YC, AI-built apps)" : src === "builders" ? "apps just built with AI app builders (Lovable, Bolt, Replit, Cursor, v0)" : src === "web" ? "the web for buying signals" : src === "hiring" ? "job boards for hiring surges" : src === "funding" ? "SEC Form D filings for new funding" : "funding and launch news"}: ${found.length} new lead${found.length === 1 ? "" : "s"}${found.length ? ` (${found.map((l) => l.company).join(", ")})` : ""}${scan.scanned ? `. Scanned ${scan.scanned}, picked ${found.length}` : ""}${scan.misses.length ? `; skipped e.g. ${scan.misses.join(", ")}` : ""}`);
   return found.length;
 }
 
@@ -199,6 +226,7 @@ async function runDrafts(ws: Workspace, s: AgentState) {
   const tb = await loadTeam();
   const backlog = tb.prefs?.autoEnrich === false ? [] : tb.leads.filter((l) => !l.enriched && l.stage !== "lost").slice(0, 3);
   for (const l of backlog) await enrichLead(l.id).catch((e) => console.error("[agent] enrich", e));
+  if (backlog.length) await bumpUsage(ws.id, "enrich", backlog.length);
   if (backlog.length) note(s, `Researched ${backlog.map((l) => l.company).join(", ")}: people, emails and fit`);
   const t = await loadTeam();
   const hasPersona = t.prefs?.personaOnly !== false && (t.personas ?? []).some((p) => p.enabled);
@@ -319,12 +347,15 @@ async function runSender() {
         unsubscribeUrl: unsub,
         address,
       });
+      const t0 = Date.now();
       const r = await sendMail(box, msg);
       await markOut(row.id, { status: "sent", messageId: r.messageId });
+      await withCompany(workspaceDomain(ws), () => recordTrace({ kind: "send", label: `sent to ${row.to_email}`, ms: Date.now() - t0, input: { from: box.email, subject: row.subject, via: box.provider ?? "smtp" }, output: { messageId: r.messageId } }));
       await bumpUsage(ws.id, "sends");
       if (row.lead_id && row.touch_id) await withCompany(workspaceDomain(ws), () => markTouchSent(row.lead_id!, row.touch_id!, r.messageId));
     } catch (err) {
       await markOut(row.id, { status: "failed", error: err instanceof Error ? err.message.slice(0, 300) : "send failed" });
+      await withCompany(workspaceDomain(ws), () => recordTrace({ kind: "send", label: `failed to ${row.to_email}`, ok: false, error: err instanceof Error ? err.message : String(err) }));
     }
   }
 }
@@ -385,17 +416,26 @@ export async function handleInbound(ws: Workspace, box: StoredMailbox, m: Inboun
 
 /* ---------- tick ---------- */
 
+/** A step that only shows in the trace when it does something (sends scheduled, replies read). */
+async function quietStep<T>(label: string, fn: () => Promise<T>) {
+  const t0 = Date.now();
+  const out = await fn();
+  if (Date.now() - t0 > 3000) await recordTrace({ kind: "step", label, ms: Date.now() - t0 });
+  return out;
+}
+
 const g = globalThis as unknown as { __agentTick?: NodeJS.Timeout; __agentBusy?: boolean };
 
 export async function tickOnce() {
   if (g.__agentBusy) return;
   g.__agentBusy = true;
   try {
+    await kvSet("agent:heartbeat", { at: new Date().toISOString(), pid: process.pid });
     await runSender().catch((e) => console.error("[agent] sender", e));
     for (const ws of await listActiveWorkspaces()) {
       const domain = workspaceDomain(ws);
       if (!domain) continue;
-      await withCompany(domain, async () => {
+      await withCompany(domain, () => withRun("agent tick", async () => {
         const s = await getState(ws.id);
         const now = Date.now();
         try {
@@ -407,29 +447,29 @@ export async function tickOnce() {
             if (s.runs < 3 && now - s.lastSourceAt > 2.5 * 3600e3 && today.leads < ws.settings.dailyLeadTarget) {
               s.lastSourceAt = now;
               s.runs++;
-              if (underPlan) await runSource(ws, s);
+              if (underPlan) await step("find leads", () => runSource(ws, s), { rotation: s.rotation });
               else note(s, `Paused searching: this month's ${plan.contactsPerMonth} contacts on the ${plan.name} plan are used up`);
             }
             if (now - s.lastDraftAt > 15 * 60e3) {
               s.lastDraftAt = now;
-              await runDrafts(ws, s);
+              await step("research + write emails", () => runDrafts(ws, s));
             }
           }
           if (now - s.lastPlanAt > 10 * 60e3) {
             s.lastPlanAt = now;
-            await planSends(ws, s);
+            await quietStep("schedule approved emails", () => planSends(ws, s));
           }
           for (const box of await listMailboxes(ws.id)) {
             if (now - (s.lastInboxAt[box.id] ?? 0) < 4 * 60e3) continue;
             s.lastInboxAt[box.id] = now;
-            await runInbox(ws, box);
+            await quietStep(`read replies (${box.email})`, () => runInbox(ws, box));
           }
         } catch (err) {
           console.error("[agent] workspace", ws.id, err);
           note(s, `Something failed: ${err instanceof Error ? err.message.slice(0, 120) : "error"}; retrying next run`);
         }
         await setState(ws.id, s);
-      });
+      }, { quiet: true }));
     }
   } finally {
     g.__agentBusy = false;

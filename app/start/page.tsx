@@ -84,6 +84,9 @@ export default function Start() {
           <button disabled={busy} className="w-full rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">
             {busy ? "Creating your agent…" : "Launch my agent"}
           </button>
+          <p className="text-center text-xs text-muted">
+            By continuing you agree to the <Link href="/terms" className="underline">Terms</Link> and <Link href="/privacy" className="underline">Privacy</Link> policy.
+          </p>
           <p className="text-center text-sm text-muted">
             Already have an account? <Link href="/login" className="text-ink underline">Log in</Link>
           </p>

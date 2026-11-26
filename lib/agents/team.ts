@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { arr, enm, llmJSON, obj, str } from "../llm";
 import { kvGet, kvSet } from "../db";
+import { setCompanyGetter } from "../trace";
 import { researchSeller, searchWeb } from "../sponsors/telem";
 import { enrichCompany } from "../sponsors/glasser";
 import { fitExamples, passesKeywords, targetingRules } from "../gtm/targeting";
@@ -57,6 +58,7 @@ export type TeamState = {
 
 // Every company gets its own room: requests run inside withCompany(domain), and load/save use that company's key.
 const companyScope = new AsyncLocalStorage<string>();
+setCompanyGetter(() => companyScope.getStore() ?? "");
 /** The company domain the current request or job runs for. */
 export function currentCompany() {
   return companyScope.getStore() ?? "";

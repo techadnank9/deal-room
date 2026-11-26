@@ -13,11 +13,25 @@ const num = (d?: string) => ({ type: "number", ...(d ? { description: d } : {}) 
 export async function generatePersonas(): Promise<Persona[]> {
   const t = await loadTeam();
   const company = t.company ?? "";
-  const [stories, roles] = await Promise.all([
-    searchWeb(`${company} customer story case study`).catch(() => ({ sources: [] })),
-    searchWeb(`${company} ${t.offering.slice(0, 80)} who buys "head of" OR VP OR director`).catch(() => ({ sources: [] })),
-  ]);
-  const sources = [...stories.sources, ...roles.sources].slice(0, 12);
+  const cap = t.targeting?.maxEmployees ?? 0;
+  const tiny = cap > 0 && cap <= 20;
+  const problem = (t.knowledge?.pains || t.icpSpec?.summary || t.offering).slice(0, 90);
+  const comp = (t.competitors ?? []).slice(0, 2).map((c) => c.name);
+  // Research from several angles: who the seller's customers are, how buyers describe the problem in their own words
+  // (communities), what reviewers of competitors say (their roles), and what the seller's pricing implies.
+  const queries = [
+    `${company} customer story case study`,
+    tiny ? `${problem} solo founder indie hacker reddit` : `${company} ${t.offering.slice(0, 80)} who buys "head of" OR VP OR director`,
+    `${problem} ${tiny ? "small startup founders" : "teams"} pain forum discussion`,
+    ...comp.map((c) => `${c} review G2 reviewer role company size`),
+    `${company} pricing plans who is it for`,
+  ];
+  const results = await Promise.all(queries.map((q) => searchWeb(q, 5).catch(() => ({ sources: [] as { title: string; url: string; snippet: string }[] }))));
+  const seenUrl = new Set<string>();
+  const sources = results
+    .flatMap((r) => r.sources)
+    .filter((x) => x.url && !seenUrl.has(x.url) && seenUrl.add(x.url))
+    .slice(0, 20);
   const { data } = await llmJSON<{ personas: Omit<Persona, "id" | "enabled">[] }>({
     label: "gtm-personas",
     maxTokens: 3500,
@@ -30,7 +44,9 @@ export async function generatePersonas(): Promise<Persona[]> {
 - watch.competitors: competitor or adjacent brands whose LinkedIn posts this persona would react to; watch.keywords: 3-5 topics they post or comment about.
 - angle: one sentence on what to lead with. cta: the ask that fits their seniority.
 - evidence: 1-3 items quoting the research (customer stories naming a title are the strongest), each with the url it came from. Never invent a url; use [] if no evidence.
-- confidence 0.00-1.00: high only with direct evidence (a case study quoting that title).`,
+- confidence 0.00-1.00: high only with direct evidence (a case study quoting that title).
+${tiny ? `IMPORTANT: the seller only sells to solo founders and tiny teams (at most ${cap} people). Every persona must fit a company of 1-${cap} people: founders, solo makers, technical co-founders, the one engineer. No managers, directors, VPs, QA leads, agencies or enterprise roles. companySize must stay within 1-${cap}. At this size one person decides and uses the product, so make the personas differ by SITUATION (e.g. non-technical founder who built with an AI app builder vs. technical founder shipping fast vs. bootstrapper with paying users), not by department. Use the community research for pains in their own words.` : cap ? `Target companies have at most ${cap} employees; keep companySize within that.` : ""}
+${t.targeting?.extraCriteria ? `The seller's own targeting notes: ${t.targeting.extraCriteria}` : ""}`,
     user: `Seller: ${company} (${t.url ?? ""})\nSells: ${t.offering}\nICP: ${t.icpSpec?.summary ?? t.icp ?? ""}\nReference customers: ${t.intake?.customers || "(none named)"}\nCompetitors: ${(t.competitors ?? []).map((c) => c.name).join(", ") || "(unknown)"}\n\nResearch:\n${sources.map((x, i) => `[${i + 1}] ${x.title} ${x.url}\n${x.snippet.slice(0, 400)}`).join("\n\n") || "(none)"}`,
     schema: obj({
       personas: arr(

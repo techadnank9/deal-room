@@ -18,6 +18,12 @@ export function targetingRules(t: T): string {
   if (ex.length) r.push(`Never pick ${ex.join(", ")}.`);
   if (g.excludeKeywords.length) r.push(`Never pick a company whose name or business involves: ${g.excludeKeywords.join(", ")}.`);
   if (g.mandatoryKeywords.length) r.push(`Only pick companies clearly related to at least one of: ${g.mandatoryKeywords.join(", ")}.`);
+  if (g.maxEmployees && g.maxEmployees > 0)
+    r.push(
+      g.maxEmployees <= 20
+        ? `Only solo founders and tiny teams: at most ${g.maxEmployees} people. Skip any company that is clearly bigger (funded scale-ups, companies with HR or many open roles, public or well-known companies).`
+        : `Only companies with at most ${g.maxEmployees} employees.`,
+    );
   if (g.extraCriteria.trim()) r.push(`Every company must also satisfy: ${g.extraCriteria.trim()}`);
   return r.length ? ` Targeting rules from the seller: ${r.join(" ")}` : "";
 }

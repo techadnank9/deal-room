@@ -7,10 +7,11 @@ import { BlocklistCard, CampaignForm, ImportCsv, TargetingCard } from "@/compone
 import { ago, Btn, EmailBadge, Empty, Flames, host, inTime, leadState, Pill, post, topContact, usePoll, type AgentInfo, type Gtm, type WorkspaceInfo } from "@/components/app/ui";
 import FitButtons from "@/components/app/FitButtons";
 import PreviewLeads from "@/components/app/PreviewLeads";
+import TraceView from "@/components/app/TraceView";
 import type { Lead } from "@/lib/agents/team";
 import type { Persona, Touch } from "@/lib/gtm/types";
 
-const TABS = ["overview", "review", "leads", "sources", "campaign", "activity", "settings"] as const;
+const TABS = ["overview", "review", "leads", "sources", "campaign", "activity", "trace", "settings"] as const;
 type Tab = (typeof TABS)[number];
 type Box = { id: string; email: string; fromName: string; dailyCap: number; warmupStart?: string; status: string };
 
@@ -116,6 +117,7 @@ export default function AgentPage() {
         {tab === "sources" && <Sources gtm={gtm} me={me} agent={agent} busy={busy} act={act} reload={reload} />}
         {tab === "campaign" && <Campaign leads={leads} autopilot={ws.settings.autopilot} t={t} reload={reload} />}
         {tab === "activity" && <Activity gtm={gtm} agent={agent} />}
+        {tab === "trace" && <TraceView />}
         {tab === "settings" && (
           <div className="card max-w-xl p-6 text-sm">
             <p>Mailboxes, sending schedule, daily limits, review mode and plan live in Settings.</p>

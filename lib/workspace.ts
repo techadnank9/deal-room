@@ -132,7 +132,9 @@ export async function getWorkspace(id: string): Promise<Workspace | null> {
 
 export async function listActiveWorkspaces(): Promise<Workspace[]> {
   const rows = await (await db()).all<Row>(`select id, owner_email, name, url, plan, trial_ends, settings from workspaces`);
-  return rows.map(toWs).filter((w) => w.settings.active && w.url);
+  // An expired trial pauses (data kept) until the workspace upgrades.
+  const now = Date.now();
+  return rows.map(toWs).filter((w) => w.settings.active && w.url && !(w.plan === "trial" && w.trialEnds && new Date(w.trialEnds).getTime() < now));
 }
 
 export async function updateWorkspace(id: string, patch: { name?: string; url?: string; plan?: Plan; settings?: Partial<AgentSettings> }): Promise<Workspace> {
