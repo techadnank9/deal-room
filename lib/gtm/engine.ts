@@ -284,11 +284,12 @@ export async function onLeadsFound(leads: Lead[]) {
 
 /* ---------------- Module 4: outreach + HITL ---------------- */
 
-export async function draftSequence(leadId: string): Promise<TeamState> {
+export async function draftSequence(leadId: string, opts: { enrich?: boolean } = {}): Promise<TeamState> {
   let t = await loadTeam();
   let l = t.leads.find((x) => x.id === leadId);
   if (!l) return t;
-  if (!l.enriched) {
+  // Background drafts write from what we already have; only a rep's request pays for a fresh enrichment.
+  if (!l.enriched && opts.enrich !== false) {
     t = await enrichLead(leadId);
     l = t.leads.find((x) => x.id === leadId)!;
   }

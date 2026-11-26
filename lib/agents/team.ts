@@ -221,6 +221,7 @@ export async function teamTurn(
   text: string,
   player: string,
   offeringInput?: string,
+  auto = false,
 ): Promise<TeamReply> {
   const t = await loadTeam();
   // Setup (your URL) is the source of truth; a typed offering only fills in when setup never ran.
@@ -412,7 +413,7 @@ export async function teamTurn(
       // Outreach goes through the approval queue (human in the loop): Arjun drafts, you approve before anything is sent.
       await saveTeam(t);
       const { draftSequence } = await import("../gtm/engine");
-      const after = await draftSequence(lead.id);
+      const after = await draftSequence(lead.id, { enrich: !auto });
       const done = after.leads.find((l) => l.id === lead.id);
       Object.assign(t, { activity: after.activity });
       if (done) Object.assign(lead, { email: done.email, sequence: done.sequence, contacts: done.contacts, signals: done.signals, score: done.score, tier: done.tier, enriched: done.enriched, fit: done.fit, intent: done.intent, stage: done.stage, history: done.history });

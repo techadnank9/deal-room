@@ -1,5 +1,7 @@
 "use client";
 
+const IDLE_MS = 3 * 60 * 1000;
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -96,7 +98,8 @@ export default function TeamRoom() {
   const busyRef = useRef(false); // background work in flight (setup, autonomy, booking)
   const userReq = useRef(0); // newest thing you said; only its reply is spoken
   const pendingUser = useRef(0);
-  const lastTalk = useRef(0);
+  const lastTalk = useRef(Date.now());
+  const [idle, setIdle] = useState(false);
   const [approach, setApproach] = useState<string | null>(null);
   const approachAt = useRef(0);
   const backTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -358,7 +361,11 @@ export default function TeamRoom() {
       "companies expanding into new markets",
     ];
     const t = setInterval(() => {
+      // Background work costs real API calls: it pauses after 3 idle minutes or while the tab is hidden.
+      const idleNow = document.hidden || Date.now() - lastTalk.current > IDLE_MS;
+      setIdle(idleNow);
       if (
+        idleNow ||
         busyRef.current ||
         pendingUser.current > 0 ||
         Date.now() - lastAuto.current < 4000
@@ -663,7 +670,12 @@ export default function TeamRoom() {
             </button>
           ))}
         </div>
-        <p className="mt-3 text-[11px] leading-snug text-muted">
+        {idle && (
+            <p className="mt-3 rounded-lg bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+              Team paused to save API calls. Say anything to wake them up.
+            </p>
+          )}
+          <p className="mt-3 text-[11px] leading-snug text-muted">
           Say a name to call them: &ldquo;Maya, find fintech startups in New
           York&rdquo;.
         </p>
