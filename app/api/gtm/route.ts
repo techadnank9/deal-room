@@ -6,7 +6,7 @@ import { drain, topUp, usage } from "@/lib/sponsors/flexprice";
 import { mossEnabled } from "@/lib/sponsors/moss";
 import { withModel } from "@/lib/llm";
 import { resolveScope } from "@/lib/workspace";
-import { addProspects, fileContacts, prospectSearch, saveContactNotes, saveLists, savePrefs, type Prospect } from "@/lib/gtm/prospect";
+import { addProspects, fileContacts, judgeProspect, markFit, previewQuery, prospectSearch, refineTouch, saveContactNotes, saveLists, savePrefs, type Prospect } from "@/lib/gtm/prospect";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +26,11 @@ export async function GET(req: Request) {
 
 type Body = {
   url?: string;
-  action: "intake" | "expansion" | "competitors" | "enrich" | "draft" | "touch" | "stage" | "search" | "topup" | "drain" | "reindex" | "personas" | "savePersonas" | "agentSettings" | "import" | "block" | "unblock" | "blocklist" | "bulk" | "prospect" | "addProspects" | "lists" | "file" | "notes" | "prefs";
+  action: "intake" | "expansion" | "competitors" | "enrich" | "draft" | "touch" | "stage" | "search" | "topup" | "drain" | "reindex" | "personas" | "savePersonas" | "agentSettings" | "import" | "block" | "unblock" | "blocklist" | "bulk" | "prospect" | "addProspects" | "lists" | "file" | "notes" | "prefs" | "fit" | "refine" | "preview" | "judge";
+  prospect?: Prospect;
+  fit?: "good" | "bad";
+  reason?: string;
+  instruction?: string;
   prospects?: Prospect[];
   lists?: string[];
   items?: { leadId: string; contactId: string }[];
@@ -126,6 +130,22 @@ export async function POST(req: Request) {
           return Response.json({ state: await fileContacts(b.items ?? [], b.list ?? "") });
         case "notes":
           return Response.json({ state: await saveContactNotes(b.leadId!, b.contactId!, b.notes ?? "") });
+        case "preview": {
+          const r = await prospectSearch(previewQuery(await loadTeam()));
+          return Response.json({ ...r, results: r.results.filter((x) => !x.known).slice(0, 5) });
+        }
+        case "judge": {
+          const st = await judgeProspect(b.prospect!, b.fit === "good" ? "good" : "bad", b.reason);
+          if (b.fit === "good") {
+            const l = st.leads.find((x) => x.company.toLowerCase() === b.prospect!.company.toLowerCase());
+            if (l) void import("@/lib/gtm/engine").then((m) => m.onLeadsFound([l])).catch(() => {});
+          }
+          return Response.json({ state: st });
+        }
+        case "fit":
+          return Response.json({ state: await markFit(b.leadId!, b.fit === "good" ? "good" : "bad", b.reason) });
+        case "refine":
+          return Response.json({ draft: await refineTouch(b.leadId!, b.touchId!, b.instruction ?? "", b.edit) });
         case "prefs":
           return Response.json({ state: await savePrefs(b.prefs ?? {}) });
         case "drain":

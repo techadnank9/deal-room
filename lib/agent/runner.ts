@@ -12,7 +12,7 @@ import { decideTouch, draftSequence, enrichLead, markReplied, markTouchSent, onL
 import { buildMessage, cleanReply, effectiveDailyCap, fetchNewMessages, isAutoReply, isBounce, makeUnsubToken, matchThread, normalizeMessageId, sendMail } from "../mail";
 import { hiringSignal, newsSignals, recentFormD, type SignalHit } from "../signals";
 import { bumpUsage, getWorkspace, listActiveWorkspaces, PLANS, usageThisMonth, usageToday, workspaceDomain, type Workspace } from "../workspace";
-import { clearsPrecision, passesKeywords, targetingRules } from "../gtm/targeting";
+import { clearsPrecision, fitExamples, passesKeywords, targetingRules } from "../gtm/targeting";
 import { allMailboxes, cancelLeadOutbox, dueOutbox, enqueue, isSuppressed, listMailboxes, markOut, saveInbound, sentMessages, sentTodayFrom, setMailboxCursor, suppress, type StoredMailbox } from "./store";
 
 export const APP_URL = process.env.APP_URL || "https://deelroomlive.onrender.com";
@@ -78,18 +78,25 @@ function enabledSources(ws: Workspace): Source[] {
 }
 
 /** Turn raw signal hits (funding filings, news) into qualified leads: ICP fit check, competitor filter, domain lookup. */
+/** What the last qualify pass looked at, for the Activity log ("scanned 30, picked 2; skipped X because Y"). */
+let lastScan: { scanned: number; misses: string[] } = { scanned: 0, misses: [] };
+
 async function leadsFromHits(hits: SignalHit[], label: string): Promise<Lead[]> {
   const t = await loadTeam();
   if (!hits.length) return [];
   const have = new Set(t.leads.map((l) => l.company.toLowerCase()));
-  const { data } = await llmJSON<{ picks: { index: number; company: string; domain: string; why: string }[] }>({
+  const { data } = await llmJSON<{ picks: { index: number; company: string; domain: string; why: string }[]; misses: { index: number; reason: string }[] }>({
     label: "agent-qualify-hits",
     maxTokens: 800,
-    system: `You qualify buying signals for a B2B seller. Pick the hits whose company plausibly fits the ideal customer and would buy now. Skip competitors (same category as the seller), investment funds, real-estate vehicles, and anything unclear. index = the number of the hit. company = the company's real name only (not the headline). domain = its website domain if you can tell from the hit, else "". why = one specific sentence tying the signal to the buyer's need. Skip very large, famous companies (thousands of employees) unless the ideal customer explicitly includes them.${targetingRules(t)}`,
+    system: `You qualify buying signals for a B2B seller. Pick the hits whose company plausibly fits the ideal customer and would buy now. Skip competitors (same category as the seller), investment funds, real-estate vehicles, and anything unclear. index = the number of the hit. company = the company's real name only (not the headline). domain = its website domain if you can tell from the hit, else "". why = one specific sentence tying the signal to the buyer's need. Skip very large, famous companies (thousands of employees) unless the ideal customer explicitly includes them. misses = up to 3 of the closest hits you skipped, each with a short plain reason (e.g. "a consultancy", "too big", "not a launch, a blog post").${targetingRules(t)}${fitExamples(t)}`,
     user: `Seller sells: ${t.offering}\nIdeal customer: ${t.icp ?? t.icpSpec?.summary ?? ""}\nCompetitors: ${(t.competitors ?? []).map((c) => c.name).join(", ")}\n\nHits:\n${hits.map((h, i) => `${i}. ${h.company}: ${h.text} (${h.sourceUrl})`).join("\n")}`,
-    schema: obj({ picks: arr(obj({ index: { type: "integer" }, company: str(), domain: str(), why: str() })) }),
-    mock: () => ({ picks: [] }),
+    schema: obj({ picks: arr(obj({ index: { type: "integer" }, company: str(), domain: str(), why: str() })), misses: arr(obj({ index: { type: "integer" }, reason: str() })) }),
+    mock: () => ({ picks: [], misses: [] }),
   });
+  lastScan = {
+    scanned: hits.length,
+    misses: (data.misses ?? []).slice(0, 3).map((m) => (hits[m.index] ? `${hits[m.index].company} (${m.reason})` : "")).filter(Boolean),
+  };
   const out: Lead[] = [];
   for (const p of data.picks.slice(0, 5)) {
     const h = hits[p.index];
@@ -176,7 +183,9 @@ async function runSource(ws: Workspace, s: AgentState): Promise<number> {
   }
   if (found.length) await bumpUsage(ws.id, "leads", found.length);
   await bumpUsage(ws.id, "runs");
-  note(s, `Searched ${src === "launches" ? "new product launches (Product Hunt, Show HN, Launch YC, AI-built apps)" : src === "web" ? "the web for buying signals" : src === "hiring" ? "job boards for hiring surges" : src === "funding" ? "SEC Form D filings for new funding" : "funding and launch news"}: ${found.length} new lead${found.length === 1 ? "" : "s"}${found.length ? ` (${found.map((l) => l.company).join(", ")})` : ""}`);
+  const scan = lastScan;
+  lastScan = { scanned: 0, misses: [] };
+  note(s, `Searched ${src === "launches" ? "new product launches (Product Hunt, Show HN, Launch YC, AI-built apps)" : src === "web" ? "the web for buying signals" : src === "hiring" ? "job boards for hiring surges" : src === "funding" ? "SEC Form D filings for new funding" : "funding and launch news"}: ${found.length} new lead${found.length === 1 ? "" : "s"}${found.length ? ` (${found.map((l) => l.company).join(", ")})` : ""}${scan.scanned ? `. Scanned ${scan.scanned}, picked ${found.length}` : ""}${scan.misses.length ? `; skipped e.g. ${scan.misses.join(", ")}` : ""}`);
   return found.length;
 }
 

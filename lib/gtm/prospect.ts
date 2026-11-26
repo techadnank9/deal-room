@@ -6,7 +6,7 @@ import { arr, llmJSON, obj, str } from "../llm";
 import { loadTeam, saveTeam, resolveCompanyUrl, type Lead, type TeamState } from "../agents/team";
 import { searchWeb } from "../sponsors/telem";
 import { indexDocs } from "../sponsors/moss";
-import { passesKeywords, targetingRules } from "./targeting";
+import { fitExamples, passesKeywords, targetingRules } from "./targeting";
 import { DEFAULT_PREFS, type Prefs, type Signal } from "./types";
 import { log } from "./engine";
 
@@ -57,7 +57,7 @@ export async function prospectSearch(query: string): Promise<{ filters: Prospect
   const { data } = await llmJSON<{ picks: { index: number; company: string; domain: string; why: string; signal: string; kind: string }[] }>({
     label: "prospect-pick",
     maxTokens: 1400,
-    system: `From web results, list the real companies that match what the seller asked for. One entry per company (never the publisher, a news site, a directory, an investor, or the seller's competitors). index = the result number it came from. company = the company's real name only. domain = its own website if you can tell, else "". signal = the specific fact from the result (one short line). kind = one of ${KINDS.join(", ")}. why = one sentence on why they would want the seller's product now. Skip anything that does not fit the request.${targetingRules(t)}`,
+    system: `From web results, list the real companies that match what the seller asked for. One entry per company (never the publisher, a news site, a directory, an investor, or the seller's competitors). index = the result number it came from. company = the company's real name only. domain = its own website if you can tell, else "". signal = the specific fact from the result (one short line). kind = one of ${KINDS.join(", ")}. why = one sentence on why they would want the seller's product now. Skip anything that does not fit the request.${targetingRules(t)}${fitExamples(t)}`,
     user: `Seller sells: ${t.offering || t.company || ""}\nCompetitors: ${(t.competitors ?? []).map((c) => c.name).join(", ")}\nThey asked for: ${q}\n\nResults:\n${hits.map((h, i) => `${i}. ${h.title} — ${h.snippet?.slice(0, 280) ?? ""} (${h.url})`).join("\n")}`,
     schema: obj({ picks: arr(obj({ index: { type: "integer" }, company: str(), domain: str(), why: str(), signal: str(), kind: str() })) }),
     mock: () => ({ picks: [] }),
@@ -165,4 +165,62 @@ export async function savePrefs(p: Partial<Prefs>): Promise<TeamState> {
   t.prefs = { ...DEFAULT_PREFS, ...(t.prefs ?? {}), ...p };
   await saveTeam(t);
   return t;
+}
+
+/* ---------- learning from the seller's fit / not-fit marks ---------- */
+
+export async function markFit(leadId: string, fit: "good" | "bad", reason?: string): Promise<TeamState> {
+  const t = await loadTeam();
+  const l = t.leads.find((x) => x.id === leadId);
+  if (l) {
+    l.feedback = { fit, reason: reason?.slice(0, 120), at: new Date().toISOString() };
+    log(t, { actor: "rep", who: "You", kind: fit === "good" ? "approve" : "reject", text: `Marked ${l.company} as ${fit === "good" ? "a good fit" : `not a fit${reason ? ` (${reason})` : ""}`}` });
+  }
+  await saveTeam(t);
+  return t;
+}
+
+/** Rewrite one drafted email to the seller's instruction ("shorter", "softer ask"), keeping every fact. Not saved. */
+export async function refineTouch(leadId: string, touchId: string, instruction: string, current?: { subject?: string; body?: string }) {
+  const t = await loadTeam();
+  const l = t.leads.find((x) => x.id === leadId);
+  const m = l?.sequence?.find((x) => x.id === touchId);
+  if (!l || !m) throw new Error("That email is gone.");
+  const subject = current?.subject ?? m.subject ?? "";
+  const body = current?.body ?? m.body;
+  const { data } = await llmJSON<{ subject: string; body: string }>({
+    label: "refine-touch",
+    maxTokens: 700,
+    system:
+      "You edit one cold email exactly as the seller asks. Keep every fact, name, number and link that is already there; never add new claims, customers or numbers. Keep the greeting and sign-off. Plain text, no markdown. If it is a follow-up with no subject, return an empty subject.",
+    user: `Instruction: ${instruction.slice(0, 300)}\n\nSubject: ${subject}\n\nBody:\n${body}`,
+    schema: obj({ subject: str(), body: str() }),
+    mock: () => ({ subject, body }),
+  });
+  return { subject: m.channel === "email" && subject ? data.subject || subject : "", body: data.body || body };
+}
+
+/** A verdict on a previewed lead: a good fit joins the pipeline; a bad one is kept only as a "not a fit" example. */
+export async function judgeProspect(p: Prospect, fit: "good" | "bad", reason?: string): Promise<TeamState> {
+  const [lead] = await addProspects([p]);
+  const t = await loadTeam();
+  const l = lead ? t.leads.find((x) => x.id === lead.id) : t.leads.find((x) => x.company.toLowerCase() === p.company.toLowerCase());
+  if (!l) return t;
+  l.feedback = { fit, reason: reason?.slice(0, 120), at: new Date().toISOString() };
+  if (fit === "bad") {
+    l.stage = "lost";
+    l.history = [...(l.history ?? []), { at: new Date().toISOString(), stage: "lost", actor: "rep", who: "You", note: `not a fit${reason ? `: ${reason}` : ""} (preview)` }];
+  }
+  await saveTeam(t);
+  return t;
+}
+
+/** A plain-words description of the agent's target, for previewing sample leads: who, what kind of company, which signal. */
+export function previewQuery(t: TeamState): string {
+  const s = t.icpSpec;
+  const kind = s?.industries?.slice(0, 2).map((x) => x.name).join(" or ") || "B2B software";
+  const size = s?.companySize?.headcount ? ` with ${s.companySize.headcount} employees` : "";
+  const where = s?.regions?.[0]?.name ? ` in ${s.regions[0].name}` : "";
+  const ps = (t.personas ?? []).filter((p) => p.enabled).slice(0, 2).map((p) => p.label);
+  return `${kind} companies${size}${where} that just raised funding, launched a product or are hiring${ps.length ? `; contact the ${ps.join(" or ")}` : ""}`.slice(0, 380);
 }

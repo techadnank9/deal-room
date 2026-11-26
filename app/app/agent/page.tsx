@@ -5,6 +5,8 @@ import Link from "next/link";
 import PersonaCards from "@/components/app/PersonaCards";
 import { BlocklistCard, CampaignForm, ImportCsv, TargetingCard } from "@/components/app/AgentSettings";
 import { ago, Btn, EmailBadge, Empty, Flames, host, inTime, leadState, Pill, post, topContact, usePoll, type AgentInfo, type Gtm, type WorkspaceInfo } from "@/components/app/ui";
+import FitButtons from "@/components/app/FitButtons";
+import PreviewLeads from "@/components/app/PreviewLeads";
 import type { Lead } from "@/lib/agents/team";
 import type { Persona, Touch } from "@/lib/gtm/types";
 
@@ -223,8 +225,10 @@ function Review({ leads, reload }: { leads: Lead[]; reload: () => Promise<void> 
     setSel(leads[i + 1]?.id ?? leads[i - 1]?.id ?? null);
     setWhy(null);
   };
-  async function decide(approve: boolean) {
+  async function decide(approve: boolean, reason?: string) {
     setBusy(true);
+    // Every decision teaches the agent: approved = a good fit, rejected = not a fit, for this reason.
+    if (!approve || !l.feedback) await post("/api/gtm", { action: "fit", leadId: l.id, fit: approve ? "good" : "bad", reason }).catch(() => {});
     for (const m of touches) {
       const e = edits[m.id];
       if (approve && e) await post("/api/gtm", { action: "touch", leadId: l.id, touchId: m.id, decision: "edit", edit: e });
@@ -300,7 +304,7 @@ function Review({ leads, reload }: { leads: Lead[]; reload: () => Promise<void> 
           </div>
         </div>
         {touches.map((m) => (
-          <TouchEditor key={m.id} m={m} value={edits[m.id]} onChange={(v) => setEdits({ ...edits, [m.id]: v })} />
+          <TouchEditor key={m.id} m={m} leadId={l.id} value={edits[m.id]} onChange={(v) => setEdits({ ...edits, [m.id]: v })} />
         ))}
         <div className="flex flex-wrap items-center gap-2">
           <button className={Btn.primary} disabled={busy || !c?.email} onClick={() => decide(true)}>✓ Approve{touches.length > 1 ? " sequence" : ""}</button>
@@ -309,7 +313,7 @@ function Review({ leads, reload }: { leads: Lead[]; reload: () => Promise<void> 
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {REJECT.map((r) => (
-                <button key={r} className="rounded-full border border-line bg-white px-3 py-1.5 text-xs hover:border-rose-400" disabled={busy} onClick={() => decide(false)}>{r}</button>
+                <button key={r} className="rounded-full border border-line bg-white px-3 py-1.5 text-xs hover:border-rose-400" disabled={busy} onClick={() => decide(false, r)}>{r}</button>
               ))}
             </div>
           )}
@@ -320,7 +324,26 @@ function Review({ leads, reload }: { leads: Lead[]; reload: () => Promise<void> 
   );
 }
 
-function TouchEditor({ m, value, onChange }: { m: Touch; value?: { subject?: string; body?: string }; onChange: (v: { subject?: string; body?: string }) => void }) {
+const REFINE = ["Shorter", "Softer ask", "More direct", "More casual"];
+
+function TouchEditor({ m, leadId, value, onChange }: { m: Touch; leadId: string; value?: { subject?: string; body?: string }; onChange: (v: { subject?: string; body?: string }) => void }) {
+  const [ask, setAsk] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function refine(instruction: string) {
+    if (!instruction.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await post<{ draft: { subject: string; body: string } }>("/api/gtm", { action: "refine", leadId, touchId: m.id, instruction, edit: { subject: value?.subject ?? m.subject, body: value?.body ?? m.body } });
+      onChange({ subject: r.draft.subject || undefined, body: r.draft.body });
+      setAsk("");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not rewrite it");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div className="card p-5">
       <div className="mb-2 flex items-center gap-2 text-xs text-muted">
@@ -332,6 +355,26 @@ function TouchEditor({ m, value, onChange }: { m: Touch; value?: { subject?: str
         <input value={value?.subject ?? m.subject ?? ""} onChange={(e) => onChange({ ...value, subject: e.target.value })} className="mb-2 w-full rounded-lg border border-line px-3 py-2 text-sm font-medium outline-none focus:border-ink" aria-label="Subject" />
       )}
       <textarea value={value?.body ?? m.body} onChange={(e) => onChange({ ...value, body: e.target.value })} rows={m.channel === "email" ? 12 : 4} className="w-full rounded-lg border border-line px-3 py-2 text-sm leading-relaxed outline-none focus:border-ink" aria-label="Message" />
+      <form
+        className="mt-2 flex flex-wrap items-center gap-1.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void refine(ask);
+        }}
+      >
+        <span className="text-xs text-muted">Refine with AI:</span>
+        {REFINE.map((r) => (
+          <button key={r} type="button" disabled={busy} onClick={() => void refine(r)} className="rounded-full border border-line bg-white px-2.5 py-1 text-xs hover:border-ink disabled:opacity-50">
+            {r}
+          </button>
+        ))}
+        <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="or say what to change…" aria-label="What to change" className="min-w-[160px] flex-1 rounded-lg border border-line px-2.5 py-1 text-xs outline-none focus:border-ink" />
+        <button className="rounded-lg bg-ink px-2.5 py-1 text-xs text-white disabled:opacity-50" disabled={busy || !ask.trim()}>
+          {busy ? "Rewriting…" : "Rewrite"}
+        </button>
+        {err && <span className="text-xs text-rose-600">{err}</span>}
+      </form>
+      {value && <p className="mt-1 text-[11px] text-muted">Edited. Your changes are saved when you approve.</p>}
     </div>
   );
 }
@@ -423,12 +466,12 @@ function Leads({ leads, agent, reload }: { leads: Lead[]; agent: AgentInfo | nul
           </table>
         </div>
       )}
-      {sel && <LeadDrawer l={sel} agent={agent} close={() => setOpen(null)} />}
+      {sel && <LeadDrawer l={sel} agent={agent} close={() => setOpen(null)} reload={reload} />}
     </div>
   );
 }
 
-function LeadDrawer({ l, agent, close }: { l: Lead; agent: AgentInfo | null; close: () => void }) {
+function LeadDrawer({ l, agent, close, reload }: { l: Lead; agent: AgentInfo | null; close: () => void; reload: () => Promise<void> }) {
   const sent = agent?.outbox.filter((o) => o.lead_id === l.id) ?? [];
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-ink/20" onClick={close}>
@@ -442,6 +485,7 @@ function LeadDrawer({ l, agent, close }: { l: Lead; agent: AgentInfo | null; clo
           <button onClick={close} className="text-muted hover:text-ink" aria-label="Close">✕</button>
         </div>
         <div className="mt-3 flex items-center gap-3"><Flames score={l.score} /><span className="text-xs text-muted">{l.scoreWhy}</span></div>
+        <div className="mt-3"><FitButtons leadId={l.id} current={l.feedback} onDone={reload} /></div>
         <h3 className="mt-5 text-xs font-medium uppercase tracking-wide text-muted">Why now</h3>
         <ul className="mt-1 space-y-1.5 text-sm">
           {(l.signals?.length ? l.signals : [{ kind: "other", text: l.why, sourceUrl: l.sourceUrl }]).map((s, i) => (
@@ -540,6 +584,7 @@ function Sources({ gtm, me, agent, busy, act, reload }: { gtm: Gtm; me: Workspac
           </div>
         </div>
       </section>
+      <PreviewLeads onChange={reload} />
       <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <TargetingCard t={t} reload={reload} />
         <BlocklistCard />

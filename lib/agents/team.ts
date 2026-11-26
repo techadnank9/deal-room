@@ -4,7 +4,7 @@ import { arr, enm, llmJSON, obj, str } from "../llm";
 import { kvGet, kvSet } from "../db";
 import { researchSeller, searchWeb } from "../sponsors/telem";
 import { enrichCompany } from "../sponsors/glasser";
-import { passesKeywords, targetingRules } from "../gtm/targeting";
+import { fitExamples, passesKeywords, targetingRules } from "../gtm/targeting";
 
 // Your AI sales team. Model ids map to the 3D characters (cfo/tech/procurement GLBs) and ElevenLabs voices.
 export const TEAM = [
@@ -338,7 +338,7 @@ export async function teamTurn(
       }>({
         label: "team-leads",
         maxTokens: 1500,
-        system: `You are ${me.name}, lead researcher on a sales team. From the search results, pick up to 5 REAL companies that would BUY what we sell (they have the problem we solve). NEVER pick our own company, and NEVER pick competitors or vendors that sell the same kind of product as us; skip media sites, directories, review sites and agencies. domain = the company's own website domain. why = one specific reason from the results. sourceUrl = the result URL it came from. Skip companies already in the lead list. The seller has rejected some companies as competitors or not buyers: never pick those, and never pick companies of the same kind as them. say = 1-2 natural spoken sentences to the seller (first name ${player}) about the buyers you found (do not mention competitors).${targetingRules(t)}${ACT}`,
+        system: `You are ${me.name}, lead researcher on a sales team. From the search results, pick up to 5 REAL companies that would BUY what we sell (they have the problem we solve). NEVER pick our own company, and NEVER pick competitors or vendors that sell the same kind of product as us; skip media sites, directories, review sites and agencies. domain = the company's own website domain. why = one specific reason from the results. sourceUrl = the result URL it came from. Skip companies already in the lead list. The seller has rejected some companies as competitors or not buyers: never pick those, and never pick companies of the same kind as them. say = 1-2 natural spoken sentences to the seller (first name ${player}) about the buyers you found (do not mention competitors).${targetingRules(t)}${fitExamples(t)}${ACT}`,
         user: `Our company: ${t.company ?? "?"} (${t.url ?? ""})\nWe sell: ${t.offering || "(unknown)"}\nIdeal customer: ${t.icp ?? "unknown"}\nAlready have: ${leadNames}\nRejected by the seller (competitors / not buyers): ${(t.excluded ?? []).join(", ") || "none"}\nSearch results (Telem):\n${sources.map((x, i) => `[${i + 1}] ${x.title} ${x.url}\n${x.snippet.slice(0, 400)}`).join("\n\n") || "(none)"}`,
         schema: obj({
           leads: arr(

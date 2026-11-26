@@ -39,3 +39,13 @@ export function clearsPrecision(score: number | undefined, t: T): boolean {
   if (score === undefined) return false;
   return p === "high" ? score >= 65 : score >= 45;
 }
+
+/** Recent fit / not-fit marks, as prompt text for whoever picks new companies. Empty until the seller marks some. */
+export function fitExamples(t: { leads: { company: string; why: string; feedback?: { fit: "good" | "bad"; reason?: string; at: string } }[] }, max = 12): string {
+  const marked = t.leads.filter((l) => l.feedback).sort((a, b) => b.feedback!.at.localeCompare(a.feedback!.at)).slice(0, max);
+  if (!marked.length) return "";
+  const good = marked.filter((l) => l.feedback!.fit === "good").map((l) => `${l.company} (${l.why.slice(0, 90)})`);
+  const bad = marked.filter((l) => l.feedback!.fit === "bad").map((l) => `${l.company}${l.feedback!.reason ? ` — ${l.feedback!.reason}` : ""}`);
+  return ` Learn from the seller's own verdicts on earlier leads.${good.length ? ` Good fits (find more like these): ${good.join("; ")}.` : ""}${bad.length ? ` Not a fit (avoid companies like these, for the reason given): ${bad.join("; ")}.` : ""}`;
+}
+

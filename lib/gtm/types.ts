@@ -66,6 +66,8 @@ export type LeadGtm = {
   history?: StageEvent[];
   enriched?: "done" | "blocked" | "failed";
   enrichedAt?: string;
+  /** The seller's verdict on this lead; the agent learns from these when it picks new companies. */
+  feedback?: { fit: "good" | "bad"; reason?: string; at: string };
 };
 
 export type Confident<T> = T & { confidence: number };
@@ -180,5 +182,7 @@ export type Prefs = {
   autoEnrich: boolean;
   /** Only write emails to people who match one of the personas. */
   personaOnly: boolean;
+  /** Average deal size in dollars, for the pipeline value on the dashboard. */
+  dealSize?: number;
 };
 export const DEFAULT_PREFS: Prefs = { autoEnrich: true, personaOnly: true };

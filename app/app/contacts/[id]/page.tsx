@@ -2,6 +2,7 @@
 // One person: who they are, why the agent picked their company (signals with sources), the emails, notes, activity.
 import Link from "next/link";
 import { use, useState } from "react";
+import FitButtons from "@/components/app/FitButtons";
 import { Btn, EmailBadge, Flames, Pill, ago, host, leadState, post, usePoll, type Gtm } from "@/components/app/ui";
 
 const SIGNAL: Record<string, string> = { funding: "Raised funds", hiring: "Hiring", launch: "Launched", exec_hire: "New leader", tech_change: "Changed tools", expansion: "Expanding", other: "In the news" };
@@ -158,6 +159,9 @@ export default function ContactPage({ params }: { params: Promise<{ id: string }
                 <span className="font-medium">Why this company:</span> {lead.why}
               </p>
               {lead.scoreWhy && <p className="mt-1 text-sm text-muted">{lead.scoreWhy}</p>}
+              <div className="mt-3">
+                <FitButtons leadId={lead.id} current={lead.feedback} onDone={reload} />
+              </div>
             </Card>
 
             <Card title="Emails to this person">
