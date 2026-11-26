@@ -305,7 +305,9 @@ export async function onLeadsFound(leads: Lead[]) {
   // Write the email right away for anyone we found a usable address for (it then waits in Review, or autopilot approves it).
   const after = await loadTeam();
   for (const l of after.leads.filter((x) => leads.some((y) => y.id === x.id) && !x.sequence?.length)) {
-    const ok = (l.contacts ?? []).some((c) => c.email && ["verified", "risky", "mx-valid", "guessed"].includes(c.emailStatus)) && l.stage !== "lost" && clearsPrecision(l.score, after);
+    // Only write automatically when we found someone who matches one of your personas, with a usable email.
+    const hasPersona = (after.personas ?? []).some((p) => p.enabled);
+    const ok = (l.contacts ?? []).some((c) => c.email && ["verified", "risky", "mx-valid", "guessed"].includes(c.emailStatus) && (!hasPersona || c.persona)) && l.stage !== "lost" && clearsPrecision(l.score, after);
     if (ok) await draftSequence(l.id, { enrich: false }).catch((e) => console.error("[gtm] draft", e));
   }
 }
