@@ -15,18 +15,27 @@ import { hiringSignal, newsSignals, recentFormD, type SignalHit } from "../signa
 import { searchWeb } from "../sponsors/telem";
 import { recordTrace, step, withRun } from "../trace";
 import { emitEvent, slackReply } from "../integrations";
-import { bumpUsage, getWorkspace, listActiveWorkspaces, PLANS, usageThisMonth, usageToday, workspaceDomain, type Workspace } from "../workspace";
+import { bumpUsage, getWorkspace, listActiveWorkspaces, PLANS, usageThisMonth, workspaceDomain, type Workspace } from "../workspace";
 import { clearsPrecision, fitExamples, passesKeywords, sendable, targetingRules } from "../gtm/targeting";
 import { allMailboxes, bounceStats, cancelLeadOutbox, dueOutbox, enqueue, isSuppressed, listMailboxes, mailboxPause, markOut, pauseMailbox, saveInbound, sentMessages, sentTodayFrom, setMailboxCursor, suppress, type StoredMailbox } from "./store";
 
 export const APP_URL = process.env.APP_URL || "https://deelroomlive.onrender.com";
 
-type AgentState = { day: string; runs: number; lastSourceAt: number; rotation: number; lastDraftAt: number; lastPlanAt: number; lastInboxAt: Record<string, number>; log: { at: string; text: string }[] };
+type AgentState = { day: string; localDay?: string; found?: number; runs: number; lastSourceAt: number; rotation: number; lastDraftAt: number; lastPlanAt: number; lastInboxAt: Record<string, number>; log: { at: string; text: string }[] };
 const stateKey = (id: string) => `agent:${id}`;
-async function getState(id: string): Promise<AgentState> {
+/** The workspace's own calendar day (its timezone), so the daily caps reset at the customer's midnight, not UTC's. */
+function localDate(tz: string, d = new Date()) {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  } catch {
+    return d.toISOString().slice(0, 10);
+  }
+}
+async function getState(id: string, tz = "UTC"): Promise<AgentState> {
   const s = (await kvGet<AgentState>(stateKey(id))) ?? { day: "", runs: 0, lastSourceAt: 0, rotation: 0, lastDraftAt: 0, lastPlanAt: 0, lastInboxAt: {}, log: [] };
-  const today = new Date().toISOString().slice(0, 10);
-  if (s.day !== today) Object.assign(s, { day: today, runs: 0 });
+  const today = localDate(tz);
+  // Scheduled searches and leads found count per local day; manual "Run now" searches don't use up the agent's runs.
+  if (s.localDay !== today) Object.assign(s, { day: today, localDay: today, runs: 0, found: 0 });
   s.lastInboxAt ??= {};
   s.log ??= [];
   return s;
@@ -445,18 +454,17 @@ export async function tickOnce() {
       const domain = workspaceDomain(ws);
       if (!domain) continue;
       await withCompany(domain, () => withRun("agent tick", async () => {
-        const s = await getState(ws.id);
+        const s = await getState(ws.id, ws.settings.timezone);
         const now = Date.now();
         try {
           if (inWindow(ws)) {
-            const today = await usageToday(ws.id);
             const month = await usageThisMonth(ws.id);
             const plan = PLANS[ws.plan];
             const underPlan = month.enrich < plan.contactsPerMonth;
-            if (s.runs < 3 && now - s.lastSourceAt > 2.5 * 3600e3 && today.leads < ws.settings.dailyLeadTarget) {
+            if (s.runs < 3 && now - s.lastSourceAt > 2.5 * 3600e3 && (s.found ?? 0) < ws.settings.dailyLeadTarget) {
               s.lastSourceAt = now;
               s.runs++;
-              if (underPlan) await step("find leads", () => runSource(ws, s), { rotation: s.rotation });
+              if (underPlan) s.found = (s.found ?? 0) + (await step("find leads", () => runSource(ws, s), { rotation: s.rotation }));
               else note(s, `Paused searching: this month's ${plan.contactsPerMonth} contacts on the ${plan.name} plan are used up`);
             }
             if (now - s.lastDraftAt > 15 * 60e3) {
@@ -499,10 +507,10 @@ export function startAgent() {
 /** Run one search now (the "Run now" button), regardless of the time window. */
 export async function runNow(ws: Workspace) {
   return withCompany(workspaceDomain(ws), async () => {
-    const s = await getState(ws.id);
+    const s = await getState(ws.id, ws.settings.timezone);
     const n = await runSource(ws, s);
+    s.found = (s.found ?? 0) + n;
     s.lastSourceAt = Date.now();
-    s.runs++;
     await runDrafts(ws, s);
     await setState(ws.id, s);
     return n;
@@ -510,7 +518,7 @@ export async function runNow(ws: Workspace) {
 }
 
 export async function agentStatus(ws: Workspace) {
-  const s = await getState(ws.id);
+  const s = await getState(ws.id, ws.settings.timezone);
   const next = inWindow(ws) ? null : nextWindowStart(ws).toISOString();
   return { runsToday: s.runs, lastSourceAt: s.lastSourceAt || null, inWindow: inWindow(ws), nextWindow: next, log: s.log.slice(0, 20) };
 }
