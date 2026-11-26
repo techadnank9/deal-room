@@ -252,9 +252,12 @@ export async function enrichLead(leadId: string, actor: Actor = "agent"): Promis
   l.enriched = "done";
   l.enrichedAt = new Date().toISOString();
   const kw = passesKeywords(`${l.company} ${l.why} ${e?.data.description ?? ""} ${l.industry ?? ""}`, t);
-  if (!kw.ok && targetingOf(t).precision !== "off") {
+  const cap = targetingOf(t).maxEmployees ?? 0;
+  const headcountNow = Number(String(l.size ?? "").replace(/[^0-9-]/g, "").split("-").pop() || 0);
+  const tooBig = cap > 0 && headcountNow > cap;
+  if ((!kw.ok && targetingOf(t).precision !== "off") || tooBig) {
     l.stage = "lost";
-    l.history = [...(l.history ?? []), { at: new Date().toISOString(), stage: "lost", actor: "agent", who: "Maya", note: kw.why }];
+    l.history = [...(l.history ?? []), { at: new Date().toISOString(), stage: "lost", actor: "agent", who: "Maya", note: tooBig ? `over ${cap} employees` : kw.why }];
   }
   l.stage ??= "matched";
   l.history ??= [{ at: l.at, stage: "matched", actor: "agent", who: l.foundBy }];

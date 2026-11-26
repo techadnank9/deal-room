@@ -136,6 +136,8 @@ export type Targeting = {
   precision: "high" | "broad" | "off";
   /** Plain-language extra rules the AI checks, e.g. "Must sell to hospitals". */
   extraCriteria: string;
+  /** Drop companies bigger than this (0 = no cap). */
+  maxEmployees?: number;
 };
 export const DEFAULT_TARGETING: Targeting = { excludeServiceProviders: true, excludeFreelancers: true, excludeConsultants: true, excludeKeywords: [], mandatoryKeywords: [], precision: "broad", extraCriteria: "" };
 

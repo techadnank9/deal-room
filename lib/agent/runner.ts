@@ -82,25 +82,27 @@ async function leadsFromHits(hits: SignalHit[], label: string): Promise<Lead[]> 
   const t = await loadTeam();
   if (!hits.length) return [];
   const have = new Set(t.leads.map((l) => l.company.toLowerCase()));
-  const { data } = await llmJSON<{ picks: { index: number; why: string }[] }>({
+  const { data } = await llmJSON<{ picks: { index: number; company: string; domain: string; why: string }[] }>({
     label: "agent-qualify-hits",
     maxTokens: 800,
-    system: `You qualify buying signals for a B2B seller. Pick the hits whose company plausibly fits the ideal customer and would buy now. Skip competitors (same category as the seller), investment funds, real-estate vehicles, and anything unclear. index = the number of the hit. why = one specific sentence tying the signal to the buyer's need.${targetingRules(t)}`,
+    system: `You qualify buying signals for a B2B seller. Pick the hits whose company plausibly fits the ideal customer and would buy now. Skip competitors (same category as the seller), investment funds, real-estate vehicles, and anything unclear. index = the number of the hit. company = the company's real name only (not the headline). domain = its website domain if you can tell from the hit, else "". why = one specific sentence tying the signal to the buyer's need. Skip very large, famous companies (thousands of employees) unless the ideal customer explicitly includes them.${targetingRules(t)}`,
     user: `Seller sells: ${t.offering}\nIdeal customer: ${t.icp ?? t.icpSpec?.summary ?? ""}\nCompetitors: ${(t.competitors ?? []).map((c) => c.name).join(", ")}\n\nHits:\n${hits.map((h, i) => `${i}. ${h.company}: ${h.text} (${h.sourceUrl})`).join("\n")}`,
-    schema: obj({ picks: arr(obj({ index: { type: "integer" }, why: str() })) }),
+    schema: obj({ picks: arr(obj({ index: { type: "integer" }, company: str(), domain: str(), why: str() })) }),
     mock: () => ({ picks: [] }),
   });
   const out: Lead[] = [];
   for (const p of data.picks.slice(0, 5)) {
     const h = hits[p.index];
-    if (!h || have.has(h.company.toLowerCase())) continue;
-    if (!passesKeywords(`${h.company} ${h.text} ${p.why}`, t).ok) continue;
-    const url = h.domain || (await resolveCompanyUrl(h.company).catch(() => ""));
+    if (!h) continue;
+    const name = (p.company || h.company).trim();
+    if (!name || have.has(name.toLowerCase())) continue;
+    if (!passesKeywords(`${name} ${h.text} ${p.why}`, t).ok) continue;
+    const url = h.domain || p.domain || (await resolveCompanyUrl(name).catch(() => ""));
     if (!url) continue;
     const domain = url.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
     out.push({
       id: Math.random().toString(36).slice(2, 10),
-      company: h.company,
+      company: name,
       domain,
       why: p.why,
       sourceUrl: h.sourceUrl,
@@ -146,13 +148,21 @@ async function runSource(ws: Workspace, s: AgentState): Promise<number> {
     }
   } else if (src === "launches") {
     // New products just launched: Product Hunt, Show HN, Launch YC, and sites built with AI app builders.
-    const { searchWeb } = await import("../sponsors/telem");
-    const icp = t.icpSpec?.summary ?? t.icp ?? "";
-    const qs = [`"Show HN" new web app launch this week`, `Product Hunt launch today new SaaS web app`, `"built with Lovable" OR "made with Bolt" OR "built on Replit" new app launch`, `Launch YC new startup launch web app`];
-    const q = qs[s.rotation % qs.length];
-    const r = await searchWeb(q).catch(() => ({ sources: [] as { title: string; url: string; snippet: string }[] }));
-    const hits: SignalHit[] = r.sources.slice(0, 12).map((x) => ({ company: x.title.split(/[-–|:]/)[0].replace(/^Show HN:?/i, "").trim().slice(0, 60), kind: "launch", text: `Launched recently: ${x.title}`.slice(0, 200), sourceUrl: x.url, at: new Date().toISOString(), strength: 0.7 }));
-    found = await leadsFromHits(hits, `launches (${icp ? "ICP" : "web"})`);
+    // Show HN posts from the last 3 days (free Hacker News API): each links the product's own site.
+    const since = Math.floor(Date.now() / 1000) - 3 * 86400;
+    const r = (await fetch(`https://hn.algolia.com/api/v1/search_by_date?tags=show_hn&hitsPerPage=60&numericFilters=created_at_i>${since},points>1`, { signal: AbortSignal.timeout(15000) })
+      .then((x) => x.json())
+      .catch(() => ({ hits: [] }))) as { hits: { title: string; url?: string; objectID: string; points?: number }[] };
+    const skip = /github\.com|github\.io|gitlab\.com|youtube\.com|twitter\.com|x\.com|medium\.com|substack\.com|news\.ycombinator\.com|apps\.apple\.com|play\.google\.com|huggingface\.co|arxiv\.org/i;
+    const hits: SignalHit[] = r.hits
+      .filter((h) => h.url && !skip.test(h.url))
+      .slice(0, 30)
+      .map((h) => {
+        const title = h.title.replace(/^Show HN:\s*/i, "");
+        const host = new URL(h.url!).hostname.replace(/^www\./, "");
+        return { company: title.split(/\s[–—-]\s|:/)[0].trim().slice(0, 60), domain: host, kind: "launch" as const, text: `Launched on Show HN: "${title.slice(0, 140)}"`, sourceUrl: `https://news.ycombinator.com/item?id=${h.objectID}`, at: new Date().toISOString(), strength: 0.75 };
+      });
+    found = await leadsFromHits(hits, "Show HN launches");
     if (found.length) void onLeadsFound(found);
   } else if (src === "funding") {
     const hits = await recentFormD({ days: 4, limit: 25, industries: ["Other Technology", "Computers", "Telecommunications", "Business Services", "Other Health Care", "Biotechnology", "Manufacturing"] }).catch(() => []);

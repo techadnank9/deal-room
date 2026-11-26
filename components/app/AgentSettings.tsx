@@ -64,6 +64,10 @@ export function TargetingCard({ t, reload }: { t: TeamState; reload: () => Promi
       <ChipInput label="Keywords to exclude" tone="red" items={g.excludeKeywords} onChange={(excludeKeywords) => setG({ ...g, excludeKeywords })} placeholder="e.g. agency, recruiting — press Enter" />
       <ChipInput label="Must mention at least one (optional)" tone="green" items={g.mandatoryKeywords} onChange={(mandatoryKeywords) => setG({ ...g, mandatoryKeywords })} placeholder="e.g. SaaS, healthcare — press Enter" />
       <label className="block text-sm">
+        <span className="mb-1 block font-medium">Largest company to contact (employees, 0 = no limit)</span>
+        <input type="number" min={0} value={g.maxEmployees ?? 0} onChange={(e) => setG({ ...g, maxEmployees: Number(e.target.value) })} className="w-40 rounded-xl border border-line bg-white px-3 py-2 outline-none focus:border-ink" />
+      </label>
+      <label className="block text-sm">
         <span className="mb-1 block font-medium">Extra rules in plain words (optional)</span>
         <textarea rows={2} value={g.extraCriteria} onChange={(e) => setG({ ...g, extraCriteria: e.target.value })} placeholder="e.g. Must sell to hospitals in the US; skip companies owned by private equity" className="w-full rounded-xl border border-line bg-white px-3 py-2 outline-none focus:border-ink" />
       </label>
